@@ -24,9 +24,10 @@ services:
       TZ: Asia/Shanghai
       DB_PATH: /app/data/orders.db
       WX_PRIVATE_KEY_PATH: /app/certs/apiclient_key.pem
+      WX_PUB_KEY_PATH: /app/certs/pub_key.pem
     volumes:
       - sph-data:/app/data           # sqlite 订单库（含密钥，勿丢失）
-      - ./certs:/app/certs:ro        # 微信商户私钥
+      - ./certs:/app/certs:ro        # 微信商户私钥 + 微信支付公钥
     shm_size: 1g                     # chromium（启动参数已 --disable-dev-shm-usage，双保险）
     mem_limit: 2g                    # 常驻浏览器 ~500MB + Node
     cpus: 2

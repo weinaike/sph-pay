@@ -33,7 +33,7 @@ Claude Code skill + 云后端：用户贴一个视频号分享链接，先看到
 
 ```bash
 cp deploy/sph.env.example deploy/sph.env   # 填微信商户参数（MOCK_PAY=0）
-mkdir certs && cp apiclient_key.pem certs/ # 商户 API 私钥
+mkdir certs && cp apiclient_key.pem pub_key.pem certs/   # 商户私钥 + 微信支付公钥
 docker compose up -d --build               # 默认国内源加速
 docker compose logs -f                     # [browserPool] ready 即就绪
 ```
@@ -79,8 +79,9 @@ pip install --user qrcode pillow -i https://mirrors.aliyun.com/pypi/simple/
 
 | 变量 | 说明 |
 |---|---|
-| `WX_APPID` / `WX_MCHID` / `WX_SERIAL` | 公众号 appid / 商户号 / 证书序列号 |
+| `WX_APPID` / `WX_MCHID` / `WX_SERIAL` | 公众号 appid / 商户号 / 商户证书序列号 |
 | `WX_PRIVATE_KEY_PATH` | 商户 API 私钥（容器内 `/app/certs/apiclient_key.pem`） |
+| `WX_PUB_KEY_PATH` / `WX_PUB_KEY_ID` | 微信支付公钥 + 公钥ID（公钥模式商户必填，回调验签用） |
 | `WX_APIV3KEY` | APIv3 密钥（32 字符，回调解密用） |
 | `WX_NOTIFY_URL` | 支付回调地址（公网 HTTPS） |
 | `PRICE_CENTS` / `ORDER_TTL_SECONDS` | 单价（分）/ 未付过期秒数 |

@@ -63,6 +63,7 @@ skill(客户端编排) ── preview/轮询/deliver ──► server(Express :8
 - **base64 密钥 174KB 超 ARG_MAX**：decrypt.py 密钥走文件不走 argv；长度校验用 `Buffer.from(s,'base64').length`（padding 算法差 1）
 - **微信 get_feed_info 必须带 Origin/Referer 头**，裸请求被拒（previewService 已带）；仅短码可用，export/数字 id 传入会"无法播放"→ 降级占位预览
 - **微信回调验签必须 raw body**：`express.raw` 挂在 wxpay 路由、全局 JSON 中间件之前；`time_expire` 与本地 `expire_at` 必须同源生成（资损窗口）
+- **微信支付公钥模式**（2024 后新商户默认，本项目商户 1737629565 即是）：平台证书接口不下发证书，回调 `Wechatpay-Serial` = 公钥ID（`PUB_KEY_ID_..`）；`services/wxpay.js` 构造时把 `WX_PUB_KEY_ID → pub_key.pem` 预置进 SDK 静态验签表（`WxPay.certificates`）。SDK 构造器另强制 `publicKey` 非空（传微信支付公钥即可）
 - **playwright 浏览器版本必须与 npm 包匹配**：用 `npx playwright install`，勿用系统 chromium 或手下载别的版本号（曾 1223/1243 错位启动失败）
 - 本机 pip 清华源异常，装 Python 包用阿里源 `-i https://mirrors.aliyun.com/pypi/simple/`
 - wechatpay-node-v3 最高版本 2.2.2 不存在，用 ^2.2.1

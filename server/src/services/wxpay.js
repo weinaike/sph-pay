@@ -9,11 +9,16 @@ export function wxpay() {
     pay = new WxPay({
       appid: config.wx.appid,
       mchid: config.wx.mchid,
-      publicKey: undefined,      // 平台证书由 SDK 自动从 /v3/certificates 拉取轮换
+      publicKey: config.wx.pubKey,      // 微信支付公钥（公钥模式）；SDK 构造器要求非空
       privateKey: config.wx.privateKey,
       key: config.wx.apiV3Key,
-      serial_no: config.wx.serial,
+      serial_no: config.wx.serial,      // 商户API证书序列号（请求签名用，与公钥无关）
     });
+    // 公钥模式：平台证书接口不下发证书，回调 Wechatpay-Serial = 公钥ID（PUB_KEY_ID_..）。
+    // 预置 SDK 静态验签表，verifySign 直接命中，否则 SDK 拉 /v3/certificates 拿不到东西必抛错。
+    if (config.wx.pubKeyId) {
+      WxPay.certificates[config.wx.pubKeyId] = config.wx.pubKey;
+    }
   }
   return pay;
 }

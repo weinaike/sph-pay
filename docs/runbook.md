@@ -5,7 +5,7 @@
 ```bash
 # 1. 配置
 cp deploy/sph.env.example deploy/sph.env && vi deploy/sph.env   # 填微信商户参数，MOCK_PAY=0
-mkdir -p certs && cp /path/to/apiclient_key.pem certs/          # 商户 API 私钥
+mkdir -p certs && cp /path/to/{apiclient_key.pem,pub_key.pem} certs/   # 商户私钥 + 微信支付公钥
 
 # 2. 构建并启动（默认国内源加速；海外构建 --build-arg USE_CN_MIRROR=0）
 docker compose up -d --build

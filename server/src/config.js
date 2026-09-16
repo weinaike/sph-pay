@@ -27,6 +27,13 @@ export const config = {
     })(),
     apiV3Key: process.env.WX_APIV3KEY || '',
     notifyUrl: process.env.WX_NOTIFY_URL || '',
+    // 微信支付公钥模式（2024后新商户默认）：公钥用于验签微信应答/回调
+    pubKeyId: process.env.WX_PUB_KEY_ID || '',
+    pubKey: (() => {
+      const p = process.env.WX_PUB_KEY_PATH;
+      if (p && fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+      return process.env.WX_PUB_KEY || '';
+    })(),
   },
 };
 
@@ -40,9 +47,14 @@ export function validateConfig() {
     WX_PRIVATE_KEY_OR_PATH: config.wx.privateKey,
     WX_APIV3KEY: config.wx.apiV3Key,
     WX_NOTIFY_URL: config.wx.notifyUrl,
+    WX_PUB_KEY_OR_PATH: config.wx.pubKey,
   }).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
     throw new Error(`缺少微信支付配置: ${missing.join(', ')}（本地调试可用 MOCK_PAY=1）`);
   }
   if (config.wx.apiV3Key.length !== 32) throw new Error('WX_APIV3KEY 必须为 32 字符');
+  if (!config.wx.pubKeyId) {
+    console.warn('[config] 未配置 WX_PUB_KEY_ID：微信支付公钥模式下回调验签将失败'
+      + '（商户平台 → 账户中心 → API安全 → 微信支付公钥 → 公钥ID，形如 PUB_KEY_ID_01...）');
+  }
 }
