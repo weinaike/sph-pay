@@ -22,7 +22,7 @@ export/[A-Za-z0-9+/=_-]+
 
 ## 2. 创建订单
 ```bash
-curl -sS -X POST "https://sph.yes-tek.com/api/preview" -H 'content-type: application/json' \
+curl -sS -X POST "https://sph.yes-tek.com/api/order" -H 'content-type: application/json' \
   -d '{"url":"<原始链接>"}'
 ```
 成功返回 `{order_id, order_token, amount_cents, code_url, expire_at, preview:{...}}`（响应慢 3~6s，正常）。

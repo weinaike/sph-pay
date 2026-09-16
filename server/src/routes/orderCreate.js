@@ -9,10 +9,10 @@ import { newOrderId, newOrderToken } from '../util/id.js';
 import { config } from '../config.js';
 import { rateLimit, ipOf } from '../middleware/rateLimit.js';
 
-export const previewRouter = Router();
+export const orderCreateRouter = Router();
 
 // IP 5 次/分钟
-previewRouter.use(rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf }));
+orderCreateRouter.use(rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf }));
 
 const bodySchema = z.object({ url: z.string().min(1).max(2048) });
 
@@ -38,7 +38,7 @@ const responseSchema = z.object({
 
 const rfc3339 = (epochSec) => new Date(epochSec * 1000).toISOString().replace(/\.\d{3}Z$/, '+00:00');
 
-previewRouter.post('/', async (req, res, next) => {
+orderCreateRouter.post('/', async (req, res, next) => {
   try {
     const { url } = bodySchema.parse(req.body);
 

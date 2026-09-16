@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import { config, validateConfig } from './config.js';
 import { orders, db } from './db.js';
-import { previewRouter } from './routes/preview.js';
+import { orderCreateRouter } from './routes/orderCreate.js';
 import { orderRouter } from './routes/order.js';
 import { wxpayRouter } from './routes/wxpay.js';
 import { resolve } from './services/resolveService.js';
@@ -20,8 +20,7 @@ app.use('/api/wxpay', express.raw({ type: '*/*', limit: '1mb' }), wxpayRouter);
 app.use('/api', express.json({ limit: '64kb' }));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
-app.use('/api/preview', previewRouter);
-app.use('/api/order', orderRouter);
+app.use('/api/order', orderCreateRouter, orderRouter); // POST / = 创建订单；/:id/* = 查询/取货
 
 // ---- sweeper：60s 一轮 ----
 setInterval(async () => {

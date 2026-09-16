@@ -2,12 +2,12 @@
 
 Base：`https://sph.yes-tek.com`（唯一地址，内置）
 
-## POST /api/preview
+## POST /api/order（创建订单）
 ```bash
-curl -X POST "https://sph.yes-tek.com/api/preview" -H 'content-type: application/json' -d '{"url":"<原始链接>"}'
+curl -X POST "https://sph.yes-tek.com/api/order" -H 'content-type: application/json' -d '{"url":"<原始链接>"}'
 ```
 - 200 `{order_id, order_token, amount_cents, code_url, expire_at, preview:{title,author,avatar,cover,description,created_at,likes,content_id}}`
-  - 下单前会做**解析预检**（真实跑一次解析，结果丢弃）：预检通过才创建订单+发起微信下单，响应会慢 3~6s，属正常
+  - 下单前做**解析预检**：预检通过才创建订单+发起微信下单，响应慢 3~6s 属正常
 - 400 `{error:'bad_link'|'bad_request'}`；export/objectId 输入返回 `{error:'unsupported_link'}`（仅短链可下单）
 - 503 `{error:'resolve_unavailable'}` 解析预检未通过（通道故障或链接失效），未创建订单，可稍后重试
 - 429 频率受限（5 次/分钟/IP）
