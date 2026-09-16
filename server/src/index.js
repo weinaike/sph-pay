@@ -5,7 +5,6 @@ import { orders, db } from './db.js';
 import { previewRouter } from './routes/preview.js';
 import { orderRouter } from './routes/order.js';
 import { wxpayRouter } from './routes/wxpay.js';
-import { devRouter } from './routes/dev.js';
 import { resolve } from './services/resolveService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
 import { refundNoFor } from './util/id.js';
@@ -20,10 +19,9 @@ app.disable('x-powered-by');
 app.use('/api/wxpay', express.raw({ type: '*/*', limit: '1mb' }), wxpayRouter);
 app.use('/api', express.json({ limit: '64kb' }));
 
-app.get('/healthz', (req, res) => res.json({ ok: true, mock: config.mockPay, price_cents: config.priceCents }));
+app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
 app.use('/api/preview', previewRouter);
 app.use('/api/order', orderRouter);
-if (config.mockPay) app.use('/api/dev', devRouter);
 
 // ---- sweeper：60s 一轮 ----
 setInterval(async () => {
@@ -33,7 +31,7 @@ setInterval(async () => {
     //    到期仍未付 → 关单过期
     for (const o of orders.listByStatus('pending')) {
       let paid = false;
-      if (!config.mockPay && nowS - o.created_at > 60) {
+      if (nowS - o.created_at > 60) {
         const q = await queryOrder(o.id).catch(() => null);
         const state = q?.trade_state;
         if (state === 'SUCCESS') {
@@ -52,7 +50,7 @@ setInterval(async () => {
     }
     // 3) 退款重试（受理失败标记 retry 的）
     for (const o of orders.listByStatus('refunded')) {
-      if (o.refund_status !== 'retry' || config.mockPay) continue;
+      if (o.refund_status !== 'retry') continue;
       try {
         const r = await refundOrder(o.id, o.amount_cents);
         if (r.status === 200) orders.markRefunded(o.id, refundNoFor(o.id));
@@ -64,7 +62,7 @@ setInterval(async () => {
 }, 60_000).unref();
 
 const server = app.listen(config.port, () => {
-  console.log(`sph-pay-server listening :${config.port} (MOCK_PAY=${config.mockPay}, price=${config.priceCents}分)`);
+  console.log(`sph-pay-server listening :${config.port} (price=${config.priceCents}分)`);
 });
 
 // 优雅退出：纯 Node 进程，无子进程需要回收

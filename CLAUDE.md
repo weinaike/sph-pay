@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-视频号付费下载系统：Claude Code skill（`skill/`，安装于 `~/.claude/skills/sph-download/`）+ 云后端（`server/`）。用户贴视频号分享链接 → 后端展示预览 → 微信扫码支付 → 支付后才下发腾讯 CDN 直链 → 客户端下载保存为 mp4。
+视频号付费下载系统：Claude Code skill（`skill/`，软链安装于项目 `.claude/skills/sph-downloader`；API 地址 `https://sph.yes-tek.com` 已写死在 SKILL.md）+ 云后端（`server/`）。用户贴视频号分享链接 → 后端展示预览 → 微信扫码支付 → 支付后才下发腾讯 CDN 直链 → 客户端下载保存为 mp4。
 
 解析走**自有服务** `https://sph.yes-tek.com`（wx_channels_download sph-api 的公开 API，`SPH_BASE` 可覆盖），无浏览器依赖。其直链为**明文 MP4**（无 XOR 密钥、无 x-enclen）；仅历史订单（miuistore 时代）存量密钥仍按 XOR 交付。
 
@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cd server
 npm ci --registry=https://registry.npmmirror.com
 
-MOCK_PAY=1 npm start                      # 本地开发（模拟支付，无需微信商户配置）
+npm start                                 # 本地开发（需真实微信商户配置，缺项启动即 fail-fast）
 npm test                                  # 全部单测
 node --test test/unit/normalize.test.js   # 单个测试文件
 
@@ -27,12 +27,12 @@ node test/manual-resolve.js 'https://weixin.qq.com/sph/AzGEWrdqgP'
 Docker（项目根目录）：
 
 ```bash
-cp deploy/sph.env.example deploy/sph.env   # 本地联调把 MOCK_PAY 设 1
+cp deploy/sph.env.example deploy/sph.env   # 首次部署拷贝后填入真实凭证
 docker compose up -d --build               # 默认国内源；海外构建 --build-arg USE_CN_MIRROR=0
 docker compose logs -f                     # healthcheck 通过即就绪
 ```
 
-本地联调闭环：preview → `POST /api/dev/mock-pay/<order_id>`（仅 MOCK_PAY=1 挂载）→ 轮询 `/api/order/:id/status` 到 resolved → `/api/order/:id/deliver`。
+联调走真实支付闭环（无 mock）：preview → 微信扫码（¥0.01）→ 轮询 `/api/order/:id/status` 到 resolved → `/api/order/:id/deliver`。回调打不进来时 sweeper 每 60s 查单对账推进 paid，无需手动干预。
 
 ## 架构
 

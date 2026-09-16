@@ -1,10 +1,10 @@
 # 后端 API 契约速查
 
-Base：`$SPH_API`（环境变量或 skill 目录 config.json）
+Base：`https://sph.yes-tek.com`（唯一地址，内置）
 
 ## POST /api/preview
 ```bash
-curl -X POST "$SPH_API/api/preview" -H 'content-type: application/json' -d '{"url":"<原始链接>"}'
+curl -X POST "https://sph.yes-tek.com/api/preview" -H 'content-type: application/json' -d '{"url":"<原始链接>"}'
 ```
 - 200 `{order_id, order_token, amount_cents, code_url, expire_at, preview:{title,author,avatar,cover,description,created_at,likes,content_id}}`
   - 下单前会做**解析预检**（真实跑一次解析，结果丢弃）：预检通过才创建订单+发起微信下单，响应会慢 3~6s，属正常
@@ -27,4 +27,4 @@ curl -X POST "$SPH_API/api/preview" -H 'content-type: application/json' -d '{"ur
 ## POST /api/wxpay/notify（微信服务器调用，非 skill 使用）
 
 ## GET /healthz
-`{ok, mock, price_cents}`
+`{ok, price_cents}`

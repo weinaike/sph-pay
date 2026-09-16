@@ -1,7 +1,7 @@
 import WxPay from 'wechatpay-node-v3';
 import { config } from '../config.js';
 
-/** 微信支付 APIv3 封装（Native 扫码）。MOCK_PAY 模式下此类不应被调用。 */
+/** 微信支付 APIv3 封装（Native 扫码） */
 let pay = null;
 
 export function wxpay() {

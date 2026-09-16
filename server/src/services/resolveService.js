@@ -86,11 +86,6 @@ async function failAndRefund(orderId, err) {
   orders.markFailed(orderId, err?.message || 'resolve failed');
   console.error(`[resolve] ${orderId} 全部失败，进入退款`);
 
-  if (config.mockPay) {
-    console.error('[resolve] MOCK_PAY: 跳过真实退款，仅标记 refunded');
-    orders.markRefunded(orderId, refundNoFor(orderId));
-    return;
-  }
   try {
     const r = await refundOrder(orderId, order.amount_cents);
     if (r.status === 200) orders.markRefunded(orderId, refundNoFor(orderId));

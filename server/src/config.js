@@ -9,7 +9,6 @@ export const config = {
   dbPath: process.env.DB_PATH || './data/orders.db',
   priceCents: num(process.env.PRICE_CENTS, 199),
   orderTtlSeconds: num(process.env.ORDER_TTL_SECONDS, 900),
-  mockPay: bool(process.env.MOCK_PAY),
   adminToken: process.env.ADMIN_TOKEN || '',
   sph: {
     // 自有解析服务（wx_channels_download sph-api 公开 API）
@@ -39,9 +38,8 @@ export const config = {
   },
 };
 
-/** MOCK_PAY 模式放宽微信必填项；生产模式 fail-fast */
+/** 启动时校验微信必填项，缺失即 fail-fast */
 export function validateConfig() {
-  if (config.mockPay) return;
   const missing = Object.entries({
     WX_APPID: config.wx.appid,
     WX_MCHID: config.wx.mchid,
@@ -52,7 +50,7 @@ export function validateConfig() {
     WX_PUB_KEY_OR_PATH: config.wx.pubKey,
   }).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
-    throw new Error(`缺少微信支付配置: ${missing.join(', ')}（本地调试可用 MOCK_PAY=1）`);
+    throw new Error(`缺少微信支付配置: ${missing.join(', ')}`);
   }
   if (config.wx.apiV3Key.length !== 32) throw new Error('WX_APIV3KEY 必须为 32 字符');
   if (!config.wx.pubKeyId) {

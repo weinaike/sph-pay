@@ -75,15 +75,12 @@ previewRouter.post('/', async (req, res, next) => {
     const orderToken = newOrderToken();
     const expireAt = Math.floor(Date.now() / 1000) + config.orderTtlSeconds;
 
-    let codeUrl = 'weixin://wxpay/mock'; // MOCK_PAY 占位
-    if (!config.mockPay) {
-      codeUrl = await createNativeOrder({
-        orderId,
-        amountCents: config.priceCents,
-        description: `视频号视频下载 ${orderId}`,
-        timeExpire: rfc3339(expireAt), // 与本地 expire_at 严格同源
-      });
-    }
+    const codeUrl = await createNativeOrder({
+      orderId,
+      amountCents: config.priceCents,
+      description: `视频号视频下载 ${orderId}`,
+      timeExpire: rfc3339(expireAt), // 与本地 expire_at 严格同源
+    });
 
     const previewJson = JSON.stringify({ ...preview, content_id: contentId });
     orders.create({
