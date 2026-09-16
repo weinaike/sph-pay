@@ -1,0 +1,23 @@
+# /etc/nginx/sites-available/sph.conf
+server {
+    listen 443 ssl http2;
+    server_name pay.example.com;            # 与 WX_NOTIFY_URL 同域
+
+    ssl_certificate     /etc/letsencrypt/live/pay.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pay.example.com/privkey.pem;
+
+    # 微信回调需要原始 body，勿在此层改写
+    location /api/wxpay/notify {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host $host;
+        proxy_request_buffering off;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # 后端 trust proxy 取真实 IP
+    }
+
+    location /healthz { proxy_pass http://127.0.0.1:8787; }
+}

@@ -1,0 +1,23 @@
+# 依赖与构建
+node_modules/
+server/node_modules/
+
+# 敏感与本地数据（订单库含下载密钥；env 含商户密钥；certs 含私钥）
+server/data/
+data/
+certs/
+*.env
+.env
+deploy/sph.env
+*.db
+*.db-shm
+*.db-wal
+
+# 本地测试产物
+sph-downloads/
+*.mp4
+*.mp4.enc
+*.log
+
+# 系统
+.DS_Store

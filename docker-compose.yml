@@ -1,0 +1,55 @@
+# 使用：
+#   cp deploy/sph.env.example deploy/sph.env && vi deploy/sph.env   # 填微信商户参数
+#   mkdir -p certs && cp apiclient_key.pem certs/                   # 商户私钥
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# 本地联调（模拟支付）:
+#   docker compose run -p 8787:8787 -e MOCK_PAY=1 sph-server
+services:
+  sph-server:
+    build:
+      context: ./server
+      args:
+        USE_CN_MIRROR: "1"          # 海外构建改 0
+    image: sph-pay-server:latest
+    container_name: sph-server
+    restart: unless-stopped
+    init: true                       # 回收 chromium 子进程，防僵尸
+    ports:
+      - "8787:8787"
+    env_file:
+      - deploy/sph.env
+    environment:
+      TZ: Asia/Shanghai
+      DB_PATH: /app/data/orders.db
+      WX_PRIVATE_KEY_PATH: /app/certs/apiclient_key.pem
+    volumes:
+      - sph-data:/app/data           # sqlite 订单库（含密钥，勿丢失）
+      - ./certs:/app/certs:ro        # 微信商户私钥
+    shm_size: 1g                     # chromium（启动参数已 --disable-dev-shm-usage，双保险）
+    mem_limit: 2g                    # 常驻浏览器 ~500MB + Node
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+  # 可选：自带 TLS 的 nginx（微信回调必须公网 HTTPS）
+  # 启用: 把证书放 deploy/tls/ 并改 server_name 后 `docker compose --profile tls up -d`
+  nginx:
+    image: nginx:alpine
+    profiles: ["tls"]
+    depends_on: [sph-server]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/tls/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/tls/certs:/etc/nginx/certs:ro
+
+volumes:
+  sph-data:

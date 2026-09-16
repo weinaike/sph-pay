@@ -1,0 +1,22 @@
+[Unit]
+Description=sph-pay-server (视频号付费下载后端)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/sph/server
+EnvironmentFile=/etc/sph.env
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+# 浏览器常驻，给足内存与文件句柄
+LimitNOFILE=65536
+MemoryMax=2G
+StandardOutput=append:/var/log/sph/server.log
+StandardError=append:/var/log/sph/server.err.log
+
+[Install]
+WantedBy=multi-user.target

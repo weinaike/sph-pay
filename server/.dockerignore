@@ -1,0 +1,6 @@
+node_modules
+data
+certs
+*.log
+.env
+test/manual-sign.js
