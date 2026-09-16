@@ -39,10 +39,10 @@ orderRouter.get('/:id/deliver', orderAuth, async (req, res, next) => {
     if (o.status !== 'resolved') {
       return res.status(409).json({ error: o.status, message: STATUS_MESSAGES[o.status] });
     }
-    // CDN url 过期 → 刷新（订单已支付，不重复收费）
-    if (Date.now() / 1000 - o.resolved_at > REFRESH_AFTER_S) {
+    // CDN url 过期 → 刷新（仅短链订单可刷新；订单已支付，不重复收费）
+    if (o.share_url && Date.now() / 1000 - o.resolved_at > REFRESH_AFTER_S) {
       try {
-        const fresh = await resolveOnce(o.content_id);
+        const fresh = await resolveOnce(o.share_url, { forceRefresh: true, timeoutMs: 20_000 });
         orders.refreshDelivery(o.id, fresh);
         o = orders.get(o.id);
       } catch (e) {
@@ -50,10 +50,12 @@ orderRouter.get('/:id/deliver', orderAuth, async (req, res, next) => {
         console.error(`[deliver] 刷新失败，回退旧 url: ${e.message}`);
       }
     }
+    // 密钥存在性区分新旧订单：明文直链常态（key 空/len 0）；历史加密订单存量密钥原样交付
+    const encrypted = !!o.xor_key_b64;
     res.json({
       url: o.cdn_url,
-      key_b64: o.xor_key_b64,
-      enc_len: o.enc_len || 131072,
+      key_b64: encrypted ? o.xor_key_b64 : '',
+      enc_len: encrypted ? (o.enc_len || 131072) : 0,
       file_size: o.file_size,
       title: o.title || 'sph_video',
     });

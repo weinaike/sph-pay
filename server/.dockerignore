@@ -3,4 +3,4 @@ data
 certs
 *.log
 .env
-test/manual-sign.js
+test/

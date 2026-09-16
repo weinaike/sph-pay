@@ -36,13 +36,22 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 `);
 
+// 增量迁移：share_url 列（解析身份 = sph 短链；旧 ##1 短链订单回填恢复可刷新能力）
+const orderColumns = db.prepare('PRAGMA table_info(orders)').all().map(c => c.name);
+if (!orderColumns.includes('share_url')) {
+  db.exec('ALTER TABLE orders ADD COLUMN share_url TEXT');
+  db.prepare(`UPDATE orders SET share_url = 'https://weixin.qq.com/sph/' || substr(content_id, 1, length(content_id) - 3)
+    WHERE content_id LIKE '%##1'`).run();
+}
+
 const now = () => Math.floor(Date.now() / 1000);
 
 export const orders = {
-  create({ id, token, contentId, amountCents, expireAt, previewJson }) {
-    db.prepare(`INSERT INTO orders (id, order_token, content_id, status, amount_cents, preview_json, created_at, expire_at)
-      VALUES (?,?,?,?,?,?,?,?)`)
-      .run(id, token, contentId, 'pending', amountCents, previewJson, now(), expireAt);
+  create({ id, token, contentId, shareUrl, amountCents, expireAt, previewJson, cdnUrl, fileSize, title }) {
+    db.prepare(`INSERT INTO orders (id, order_token, content_id, share_url, status, amount_cents, preview_json, cdn_url, file_size, title, created_at, expire_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, token, contentId, shareUrl ?? null, 'pending', amountCents, previewJson,
+        cdnUrl ?? null, fileSize ?? null, title ?? null, now(), expireAt);
   },
   get(id) {
     return db.prepare('SELECT * FROM orders WHERE id=?').get(id);

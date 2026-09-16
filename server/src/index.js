@@ -9,7 +9,6 @@ import { devRouter } from './routes/dev.js';
 import { resolve } from './services/resolveService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
 import { refundNoFor } from './util/id.js';
-import { pool } from './sph/browserPool.js';
 
 validateConfig();
 
@@ -26,28 +25,25 @@ app.use('/api/preview', previewRouter);
 app.use('/api/order', orderRouter);
 if (config.mockPay) app.use('/api/dev', devRouter);
 
-// 生产环境浏览器常驻预热（MOCK 联调也预热，方便 manual-sign 复用）
-pool.start().catch(e => console.error('[boot] 浏览器预热失败（首次用到时会再试）:', e.message));
-
 // ---- sweeper：60s 一轮 ----
 setInterval(async () => {
   const nowS = Date.now() / 1000;
   try {
-    // 1) pending 过期 → 查单对账 → 关单
+    // 1) pending 对账：超 60s 每轮查单（回调丢失兜底，微信回调打不进来时靠这里推进 paid）；
+    //    到期仍未付 → 关单过期
     for (const o of orders.listByStatus('pending')) {
-      if (o.expire_at > nowS) continue;
       let paid = false;
-      if (!config.mockPay) {
+      if (!config.mockPay && nowS - o.created_at > 60) {
         const q = await queryOrder(o.id).catch(() => null);
         const state = q?.trade_state;
         if (state === 'SUCCESS') {
           paid = orders.markPaid(o.id, q.transaction_id);
           if (paid) resolve(o.id).catch(() => {});
-        } else if (state && state !== 'NOTPAY' && state !== 'CLOSED') {
+        } else if (o.expire_at <= nowS && state && state !== 'NOTPAY' && state !== 'CLOSED') {
           await closeOrder(o.id);
         }
       }
-      if (!paid) orders.markExpired(o.id);
+      if (!paid && o.expire_at <= nowS) orders.markExpired(o.id);
     }
     // 2) paid/resolving 卡死超 10min → 再试解析（resolve 内部有防重入与次数控制）
     for (const o of [...orders.listByStatus('paid'), ...orders.listByStatus('resolving')]) {
@@ -71,11 +67,10 @@ const server = app.listen(config.port, () => {
   console.log(`sph-pay-server listening :${config.port} (MOCK_PAY=${config.mockPay}, price=${config.priceCents}分)`);
 });
 
-// 优雅退出：关服务器与浏览器
+// 优雅退出：纯 Node 进程，无子进程需要回收
 for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
+  process.on(sig, () => {
     server.close();
-    try { await pool.close(); } catch {}
     db.close();
     process.exit(0);
   });

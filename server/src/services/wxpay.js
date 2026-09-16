@@ -23,7 +23,8 @@ export function wxpay() {
   return pay;
 }
 
-/** Native 下单 → code_url。time_expire 由调用方统一计算，保证与本地 expire_at 同源 */
+/** Native 下单 → code_url。time_expire 由调用方统一计算，保证与本地 expire_at 同源。
+ *  SDK 所有方法统一返回 {status, data} 包装（非 2xx 也不抛），业务字段在 r.data。 */
 export async function createNativeOrder({ orderId, amountCents, description, timeExpire }) {
   const r = await wxpay().transactions_native({
     description,
@@ -32,10 +33,11 @@ export async function createNativeOrder({ orderId, amountCents, description, tim
     amount: { total: amountCents, currency: 'CNY' },
     time_expire: timeExpire, // RFC3339
   });
-  if (r.status !== 200 || !r.code_url) {
+  const codeUrl = r?.data?.code_url;
+  if (r.status !== 200 || !codeUrl) {
     throw new Error(`微信下单失败: ${JSON.stringify(r).slice(0, 300)}`);
   }
-  return r.code_url;
+  return codeUrl;
 }
 
 /** 回调验签：必须传 raw body 字符串 */
@@ -43,16 +45,18 @@ export async function verifyNotify({ timestamp, nonce, body, serial, signature }
   return wxpay().verifySign({ timestamp, nonce, body, serial, signature });
 }
 
-/** 回调 resource 解密（AES-256-GCM, key=APIv3Key） */
+/** 回调 resource 解密（AES-256-GCM, key=APIv3Key）。
+ *  ⚠️ SDK 签名顺序 decipher_gcm(ciphertext, associated_data, nonce, key)——曾传反导致
+ *  key 收到 associated_data（"transaction"，11 字节）抛 Invalid key length。 */
 export function decryptResource({ ciphertext, nonce, associated_data }) {
-  return wxpay().decipher_gcm(ciphertext, API_V3_KEY(), nonce, associated_data);
+  return wxpay().decipher_gcm(ciphertext, associated_data, nonce, API_V3_KEY());
 }
 const API_V3_KEY = () => config.wx.apiV3Key;
 
-/** 主动查单（对账兜底） */
+/** 主动查单（对账兜底）→ 微信订单资源（trade_state 等），失败返回 null */
 export async function queryOrder(orderId) {
   const r = await wxpay().query({ out_trade_no: orderId });
-  return r.status === 200 ? r : null;
+  return r.status === 200 ? r.data : null;
 }
 
 /** 关单 */

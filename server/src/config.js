@@ -10,11 +10,13 @@ export const config = {
   priceCents: num(process.env.PRICE_CENTS, 199),
   orderTtlSeconds: num(process.env.ORDER_TTL_SECONDS, 900),
   mockPay: bool(process.env.MOCK_PAY),
-  headed: bool(process.env.HEADED),
   adminToken: process.env.ADMIN_TOKEN || '',
   sph: {
-    base: process.env.SPH_BASE || 'https://sph.miuistore.com',
-    signTtlMs: num(process.env.SIGN_TTL_MS, 10 * 60 * 1000),
+    // 自有解析服务（wx_channels_download sph-api 公开 API）
+    base: process.env.SPH_BASE || 'https://sph.yes-tek.com',
+    requestTimeoutMs: num(process.env.SPH_REQUEST_TIMEOUT_MS, 10_000),
+    pollIntervalMs: num(process.env.SPH_POLL_INTERVAL_MS, 1_500),
+    resolveTimeoutMs: num(process.env.SPH_RESOLVE_TIMEOUT_MS, 90_000),
   },
   wx: {
     appid: process.env.WX_APPID || '',

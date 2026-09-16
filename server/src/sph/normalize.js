@@ -1,11 +1,11 @@
 /**
- * 归一化用户输入 → sph 站 content_id。
- * 规则来自 sph.miuistore.com 前端 sph.js 的实测逆向：
+ * 归一化用户输入 → 解析身份。
  *   - weixin.qq.com/sph/<code>                       → <code>##1
  *   - channels.weixin.qq.com/finder-preview/pages/sph…?id=<code> → <code>##1
- *   - export/<id>                                     → export/<id>##2
- *   - 微信库 JSON 里的 objectId                       → <数字objectId>
- * 返回 { contentId, shortUri|null }：shortUri 为可匿名查预览的短码。
+ *   - export/<id>                                     → export/<id>##2（仅台账，不可解析）
+ *   - 微信库 JSON 里的 objectId                       → <数字objectId>（仅台账，不可解析）
+ * 返回 { contentId, shortUri|null }：shortUri 短码是自有解析服务与微信预览的唯一有效身份，
+ * export/objectId 输入 shortUri 为 null → 订单 share_url 为 NULL → 支付后 fail-fast 退款。
  */
 const RE_EXPORT = /export\/([A-Za-z0-9+/=_-]{8,})/;
 const RE_SHORT = /weixin\.qq\.com\/sph\/([A-Za-z0-9]+)/;

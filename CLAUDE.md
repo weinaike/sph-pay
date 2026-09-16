@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-视频号付费下载系统：Claude Code skill（`skill/`，安装于 `~/.claude/skills/sph-download/`）+ 云后端（`server/`）。用户贴视频号分享链接 → 后端展示预览 → 微信扫码支付 → 支付后才下发腾讯 CDN 直链与 XOR 解密密钥 → 客户端下载并解密为 mp4。
+视频号付费下载系统：Claude Code skill（`skill/`，安装于 `~/.claude/skills/sph-download/`）+ 云后端（`server/`）。用户贴视频号分享链接 → 后端展示预览 → 微信扫码支付 → 支付后才下发腾讯 CDN 直链 → 客户端下载保存为 mp4。
 
-对上游解析站 sph.miuistore.com **无控制权**——它是单点依赖，改版风险集中在 `server/src/sph/` 隔离层。
+解析走**自有服务** `https://sph.yes-tek.com`（wx_channels_download sph-api 的公开 API，`SPH_BASE` 可覆盖），无浏览器依赖。其直链为**明文 MP4**（无 XOR 密钥、无 x-enclen）；仅历史订单（miuistore 时代）存量密钥仍按 XOR 交付。
 
 ## 常用命令
 
@@ -15,14 +15,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cd server
 npm ci --registry=https://registry.npmmirror.com
-PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright npx playwright install chromium
 
 MOCK_PAY=1 npm start                      # 本地开发（模拟支付，无需微信商户配置）
 npm test                                  # 全部单测
 node --test test/unit/normalize.test.js   # 单个测试文件
 
-node test/manual-sign.js 'https://weixin.qq.com/sph/AzGEWrdqgP'
-# ↑ 风险前置验证：headless 签名 + quick 全链路。改过 signer/quickClient/browserPool 后必跑
+node test/manual-resolve.js 'https://weixin.qq.com/sph/AzGEWrdqgP'
+# ↑ 风险前置验证：自有解析服务全链路（提交 job → 轮询 → HEAD 校准）。改过 resolverClient/resolveService 后必跑
 ```
 
 Docker（项目根目录）：
@@ -30,7 +29,7 @@ Docker（项目根目录）：
 ```bash
 cp deploy/sph.env.example deploy/sph.env   # 本地联调把 MOCK_PAY 设 1
 docker compose up -d --build               # 默认国内源；海外构建 --build-arg USE_CN_MIRROR=0
-docker compose logs -f                     # [browserPool] ready = 就绪
+docker compose logs -f                     # healthcheck 通过即就绪
 ```
 
 本地联调闭环：preview → `POST /api/dev/mock-pay/<order_id>`（仅 MOCK_PAY=1 挂载）→ 轮询 `/api/order/:id/status` 到 resolved → `/api/order/:id/deliver`。
@@ -39,31 +38,32 @@ docker compose logs -f                     # [browserPool] ready = 就绪
 
 ```
 skill(客户端编排) ── preview/轮询/deliver ──► server(Express :8787)
-                                              ├─ previewService → 微信免登录 get_feed_info（预览元数据+dynamicExportId）
+                                              ├─ previewService → 微信免登录 get_feed_info（预览元数据）
                                               ├─ wxpay(APIv3 Native) → 下单/回调验签(AES-GCM)/退款
-                                              ├─ resolveService → sph/ 隔离层 → quick 接口 → url+key 落库
-                                              └─ sweeper(60s)：过期关单/查单对账/卡单重试/退款重试
-客户端下载：直连腾讯 CDN（前 131072 字节加扰）→ XOR 解密 → mp4
+                                              ├─ resolveService → sph/resolverClient → sph.yes-tek.com
+                                              │   POST /api/scraper/fetch → 轮询 /api/scraper/job → 明文直链落库
+                                              └─ sweeper(60s)：pending 查单对账（回调丢失兜底）/过期关单/卡单重试/退款重试
+客户端下载：直连腾讯 CDN（明文 MP4；历史加密订单前 131072 字节 XOR 解密）
 ```
 
 订单状态机：`pending → paid → resolving → resolved`；分支：`pending→expired`（15min 未付+关单）、`解析 3 次重试全败→failed→自动全额退款→refunded`。幂等靠 `UPDATE ... WHERE status='pending'`。
 
 **核心安全不变量**：`cdn_url`/`xor_key_b64` 只存在于 sqlite（`server/data/orders.db`，含密钥属敏感文件）和 deliver 响应中。preview/status 的响应必须过 zod 白名单序列化（`routes/preview.js`），新增字段需显式改 schema。支付前零下发。
 
-### src/sph/ —— 全项目唯一接触 sph.miuistore.com 的目录
+### src/sph/ —— 解析隔离层
 
-站点改版时只动这里，按此顺序排查（详见 `docs/runbook.md`）：
-- `normalize.js`：输入归一化 → `<短码>##1` / `export/...##2`（规则逆向自该站前端）
-- `signer.js`：在常驻页面 `page.evaluate` 执行该站自己的 `AlgoSign({appId:'sph'})` SDK 生成 sign（sign 可脱离浏览器在 Node fetch 复用，缓存 10min）。**sign 为空 = headless 被反自动化检测**，兜底 `HEADED=1` + `xvfb-run`
-- `quickClient.js`：调 `/sph/public/quick` + 响应 schema 探测。结构不符抛 `SphChangedError`（显式失败，绝不入库脏数据）；HTTP 500 / error 79 抛 `BadSignError`（触发重签）
-- `browserPool.js`：headless chromium 常驻 + 60s 心跳自愈 + 串行队列（VMP SDK 并发行为未知）
+解析身份是订单的 `share_url` 列（`https://weixin.qq.com/sph/<短码>`，preview 时落库；db.js 启动迁移会从旧 `content_id LIKE '%##1'` 回填）。`content_id` 的 `##1/##2` 后缀仅为台账兼容。排查解析问题只动这里：
+
+- `normalize.js`：输入归一化 → `contentId` + `shortUri`（短码是解析与预览的唯一有效身份）
+- `resolverClient.js`：自有解析 API 客户端。错误分类决定重试策略：`ResolverTransientError`（网络/超时/job interrupted）→ 上层重试；`ResolverFatalError`（job failed / 响应结构变化）→ 立即终止进退款（显式失败，绝不入库脏数据）。completed 载荷校验拆成纯函数 `validateCompleted` 供单测
 
 ## 关键坑（均已踩过）
 
-- **base64 密钥 174KB 超 ARG_MAX**：decrypt.py 密钥走文件不走 argv；长度校验用 `Buffer.from(s,'base64').length`（padding 算法差 1）
+- **解析服务只接受 `weixin.qq.com/sph/` 短链**：export/objectId 输入在 preview 即被拒（400 unsupported_link，不创建订单）；支付前还有真实解析预检（预检不过 503，不下单）——两道闸门从根上避免"支付后解析失败→退款"。resolveService 里保留 share_url NULL fail-fast 兜底（防存量订单/sweeper 无限重试）
+- **直链是明文 MP4**：无 XOR/x-enclen；deliver 用密钥存在性（`!!xor_key_b64`）区分新旧订单，历史密钥原样交付
+- **base64 密钥 174KB 超 ARG_MAX**（历史订单解密）：decrypt.py 密钥走文件不走 argv；长度校验用 `Buffer.from(s,'base64').length`（padding 算法差 1）
 - **微信 get_feed_info 必须带 Origin/Referer 头**，裸请求被拒（previewService 已带）；仅短码可用，export/数字 id 传入会"无法播放"→ 降级占位预览
 - **微信回调验签必须 raw body**：`express.raw` 挂在 wxpay 路由、全局 JSON 中间件之前；`time_expire` 与本地 `expire_at` 必须同源生成（资损窗口）
-- **微信支付公钥模式**（2024 后新商户默认，本项目商户 1737629565 即是）：平台证书接口不下发证书，回调 `Wechatpay-Serial` = 公钥ID（`PUB_KEY_ID_..`）；`services/wxpay.js` 构造时把 `WX_PUB_KEY_ID → pub_key.pem` 预置进 SDK 静态验签表（`WxPay.certificates`）。SDK 构造器另强制 `publicKey` 非空（传微信支付公钥即可）
-- **playwright 浏览器版本必须与 npm 包匹配**：用 `npx playwright install`，勿用系统 chromium 或手下载别的版本号（曾 1223/1243 错位启动失败）
+- **回调打不进来时（本地调试/公网未部署）**：sweeper 对超 60s 的 pending 订单每轮主动查单对账推进 paid
 - 本机 pip 清华源异常，装 Python 包用阿里源 `-i https://mirrors.aliyun.com/pypi/simple/`
 - wechatpay-node-v3 最高版本 2.2.2 不存在，用 ^2.2.1

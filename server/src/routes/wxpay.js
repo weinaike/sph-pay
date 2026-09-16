@@ -31,6 +31,7 @@ wxpayRouter.post('/notify', expressRaw(), async (req, res) => {
 
     if (data.trade_state === 'SUCCESS') {
       const changed = orders.markPaid(data.out_trade_no, data.transaction_id);
+      console.log(`[notify] ${data.out_trade_no} 回调验签+解密通过 (txn ${data.transaction_id}, markPaid=${changed})`);
       if (changed) {
         resolve(data.out_trade_no).catch(e => console.error(`[notify] resolve 启动失败: ${e.message}`));
       }

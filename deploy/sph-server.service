@@ -12,9 +12,9 @@ EnvironmentFile=/etc/sph.env
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5
-# 浏览器常驻，给足内存与文件句柄
+# 解析走自有远程服务，纯 Node 进程
 LimitNOFILE=65536
-MemoryMax=2G
+MemoryMax=512M
 StandardOutput=append:/var/log/sph/server.log
 StandardError=append:/var/log/sph/server.err.log
 

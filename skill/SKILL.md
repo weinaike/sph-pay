@@ -26,6 +26,9 @@ curl -sS -X POST "$SPH_API/api/preview" -H 'content-type: application/json' \
   -d '{"url":"<原始链接>"}'
 ```
 成功返回 `{order_id, order_token, amount_cents, code_url, expire_at, preview:{...}}`。
+- 响应会慢 3~6s（下单前做解析预检），正常
+- 400 `unsupported_link` → 告知用户仅支持短链（export 链接无法解析）
+- 503 `resolve_unavailable` → 解析通道暂不可用，未创建订单；告知用户稍后重试
 **立即落盘**（会话中断可恢复）：
 ```bash
 mkdir -p ./sph-downloads/.orders && cat > "./sph-downloads/.orders/<order_id>.json" <<EOF
@@ -67,15 +70,19 @@ curl -sS "$SPH_API/api/order/<order_id>/deliver?token=<order_token>"
 返回 `{url, key_b64, enc_len, file_size, title}`。
 - 409 not_ready → 等 3s 再试
 - 403 → 从订单文件恢复 token
+- **`key_b64` 为空或 `enc_len` 为 0（常态）**：`url` 是明文 MP4 直链 → 按第 7 步直接下载，跳过第 8 步
+- `key_b64` 非空（历史加密订单）：走第 7 步 `.enc` + 第 8 步解密
 
 ### 7. 下载（断点续传，可后台）
+明文直链（常态）：
 ```bash
-curl -sSL -C - --retry 3 -o "./sph-downloads/<净化文件名>.mp4.enc" "<url>"
+curl -sSL -C - --retry 3 -o "./sph-downloads/<净化文件名>.mp4" "<url>"
 ```
+历史加密订单：目标文件改为 `<净化文件名>.mp4.enc`，下载后进第 8 步。
 - 文件名：标题去除换行和 `/\:*?"<>|`，截断 60 字符
 - 大文件（>50MB）放后台跑，期间可 `ls -l` 查看进度
 
-### 8. 解密（原地 XOR 前 enc_len 字节）
+### 8. 解密（仅历史加密订单：原地 XOR 前 enc_len 字节）
 密钥 base64 约 175KB，超出命令行参数上限，必须先存文件：
 ```bash
 curl -sS "$SPH_API/api/order/<order_id>/deliver?token=<order_token>" -o /tmp/deliver.json
