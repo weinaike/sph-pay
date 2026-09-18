@@ -11,9 +11,6 @@ import { rateLimit, ipOf } from '../middleware/rateLimit.js';
 
 export const orderCreateRouter = Router();
 
-// IP 5 次/分钟
-orderCreateRouter.use(rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf }));
-
 const bodySchema = z.object({ url: z.string().min(1).max(2048) });
 
 /** 白名单序列化：url/key/sign 绝不出现 */
@@ -38,7 +35,9 @@ const responseSchema = z.object({
 
 const rfc3339 = (epochSec) => new Date(epochSec * 1000).toISOString().replace(/\.\d{3}Z$/, '+00:00');
 
-orderCreateRouter.post('/', async (req, res, next) => {
+// IP 5 次/分钟，只限创建订单（POST /）。
+// ⚠️ 不能挂 router.use：会连 GET /:id/status 轮询一起计数（status 让客户端 3s 一轮，必 429）
+orderCreateRouter.post('/', rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf }), async (req, res, next) => {
   try {
     const { url } = bodySchema.parse(req.body);
 
