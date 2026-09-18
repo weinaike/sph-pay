@@ -17,8 +17,14 @@ export const config = {
     pollIntervalMs: num(process.env.SPH_POLL_INTERVAL_MS, 1_500),
     resolveTimeoutMs: num(process.env.SPH_RESOLVE_TIMEOUT_MS, 90_000),
   },
+  sec: {
+    // 内容安全「消息推送」验签 Token（与小程序后台「消息推送」填的 Token 一致）
+    pushToken: process.env.WX_PUSH_TOKEN || 'sphSecPush2026',
+  },
   wx: {
     appid: process.env.WX_APPID || '',
+    // 小程序 appsecret（内容安全 API 用，与支付的商户密钥无关）
+    appsecret: process.env.WX_APPSECRET || '',
     mchid: process.env.WX_MCHID || '',
     serial: process.env.WX_SERIAL || '',
     privateKey: (() => {

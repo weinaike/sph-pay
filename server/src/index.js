@@ -5,6 +5,7 @@ import { orders, db } from './db.js';
 import { orderCreateRouter } from './routes/orderCreate.js';
 import { orderRouter } from './routes/order.js';
 import { wxpayRouter } from './routes/wxpay.js';
+import { authRouter, securityRouter } from './routes/security.js';
 import { resolve } from './services/resolveService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
 import { refundNoFor } from './util/id.js';
@@ -21,6 +22,8 @@ app.use('/api', express.json({ limit: '64kb' }));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
 app.use('/api/order', orderCreateRouter, orderRouter); // POST / = 创建订单；/:id/* = 查询/取货
+app.use('/api/auth', authRouter); // POST /login：wx.login code 换 skey（内容安全用）
+app.use('/api/security', securityRouter); // 内容安全检测 + 微信消息推送回调
 
 // ---- sweeper：60s 一轮 ----
 setInterval(async () => {
