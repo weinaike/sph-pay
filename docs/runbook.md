@@ -90,7 +90,36 @@ sweeper 每分钟自动重试；仍卡住 `systemctl restart sph-server`（解�
 ### 回调丢失（paid 长时间不推进）
 微信回调打不进来（notify URL 未部署/被墙/nginx 未放行）时不必处理：sweeper 对创建超 60s 的 pending 订单每轮主动查单，支付成功即推进 paid → 解析。若长期本地运行，可忽略微信侧重试的失败回调。
 
+### 达人检索后端探活（wx-webtop 容器，:2027）
+达人检索的上游是本机 `wx-webtop-old` 容器（微信登录态 + 视频号页面注入 WS）。四层死法，探法成本与含义不同：
+
+| 层 | 探法 | 死了的现象 |
+|---|---|---|
+| 容器/进程 | `docker ps` / `pgrep` | healthcheck unhealthy、重启循环 |
+| 引擎 API | HTTP GET `:2027/` | 连接拒绝/超时 |
+| **注入 socket（地面真相）** | 真实 search 调用 | `{"code":400,"msg":"请先初始化客户端 socket 连接"}` |
+| 微信登录态 | 同上 | 同样报 socket 错 + 桌面弹登录窗（需人工扫码） |
+
+```bash
+# L0/L1：进程与引擎——活着 ≠ 能用（最隐蔽的半死状态：引擎 200 但 socket 已死）
+docker exec wx-webtop-old pgrep -c 'wx_video_download|wechat'
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:2027/
+
+# L2：注入在线性——唯一可靠探活，errCode:0 即全链路健康
+curl -s -m 10 -G http://127.0.0.1:2027/api/channels/contact/search \
+  --data-urlencode 'keyword=1' | head -c 120
+```
+
+处置（按最常见的死法排序）：
+1. **socket 死、进程全活**（最常见，隔夜页面丢失）：开 `http://127.0.0.1:3200` 桌面 → 微信 → 重新点开「视频号」页面 → 重跑 L2 验证。注意 WeChatAppEx（webview 运行时）不随页面销毁，进程探测发现不了这种死法
+2. 引擎死：`docker exec wx-webtop-old wx-start-downloader`；重启容器是最后手段（微信要重新扫码）
+3. 微信死/掉线：`docker exec wx-webtop-old wx-start-wechat`——Linux 微信冷启动无自动登录，重启后基本要人工扫码
+4. **探活频率纪律**：真实 search 探活 ≥10min 间隔；1min 一次的搜索本身就是风控信号，探活不能成为风险源
+
+保活现状（2026-09）：无自动保活，页面恢复靠人工。已知根因优先级：宿主 mac-mini 睡眠（Docker VM 挂起 → 微信长连接全断，wechat.log 会留 `GetA8KeyResp` 错误痕迹）> 页面隔夜丢失 > 进程崩溃。`wx-keepalive`（xdotool 自动重开页面）落地前，隔夜后先跑 L2 再对外承诺检索可用。
+
 ## 风险提示
 - 解析单点是自有服务 sph.yes-tek.com（受控），其上游依赖 `.tencent.com` cookie 新鲜度（CookieCloud 自更新链），链断裂表现为持续解析失败→自动退款
+- 达人检索上游单点：wx-webtop 容器内的微信登录态（页面丢失/掉线即检索不可用，探测与处置见上节；掉线恢复需人工扫码）
 - 商户号挂"视频下载"虚拟服务有类目合规风险，保留侵权投诉通道
 - 微信平台证书由 SDK 自动轮换，勿硬编码进代码
