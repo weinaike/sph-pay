@@ -17,6 +17,7 @@ export const config = {
     B: { cents: 3000, linkQuota: 100, searchCredits: 10 },
     C: { cents: 5000, linkQuota: 200, searchCredits: 20 },
   },
+  wxqrUpstream: process.env.WXQR_UPSTREAM || 'http://host.docker.internal:2029', // wx-rpa daemon 回源（钉钉二维码图）
   sph: {
     // 自有解析服务（wx_channels_download sph-api 公开 API）
     base: process.env.SPH_BASE || 'https://sph.yes-tek.com',

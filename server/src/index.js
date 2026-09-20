@@ -10,6 +10,7 @@ import { packageRouter } from './routes/package.js';
 import { finderRouter } from './routes/finder.js';
 import { resolveRouter } from './routes/resolve.js';
 import { devRouter } from './routes/dev.js';
+import { wxqrRouter } from './routes/wxqr.js';
 import { authRouter, securityRouter } from './routes/security.js';
 import { resolve } from './services/resolveService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
@@ -27,6 +28,7 @@ app.use('/api', express.json({ limit: '64kb' }));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
 app.use('/api/order', orderCreateRouter, orderRouter); // POST / = 创建订单；/:id/* = 查询/取货
+app.use('/api/wxqr', wxqrRouter); // GET /?t= 微信登录二维码回源（钉钉通知图；token 由 daemon 管理生命周期）
 app.use('/api/user', userRouter); // POST / = 匿名开户；GET /me = 余额/已购
 app.use('/api/package', packageRouter); // POST / = 购买资源包（kind='package' 订单）
 app.use('/api/finder', finderRouter); // POST /search 达人检索；POST /videos 作品列表（免费10/百条扣机会）
