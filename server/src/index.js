@@ -5,6 +5,11 @@ import { orders, db } from './db.js';
 import { orderCreateRouter } from './routes/orderCreate.js';
 import { orderRouter } from './routes/order.js';
 import { wxpayRouter } from './routes/wxpay.js';
+import { userRouter } from './routes/user.js';
+import { packageRouter } from './routes/package.js';
+import { finderRouter } from './routes/finder.js';
+import { resolveRouter } from './routes/resolve.js';
+import { devRouter } from './routes/dev.js';
 import { authRouter, securityRouter } from './routes/security.js';
 import { resolve } from './services/resolveService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
@@ -22,6 +27,11 @@ app.use('/api', express.json({ limit: '64kb' }));
 
 app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
 app.use('/api/order', orderCreateRouter, orderRouter); // POST / = 创建订单；/:id/* = 查询/取货
+app.use('/api/user', userRouter); // POST / = 匿名开户；GET /me = 余额/已购
+app.use('/api/package', packageRouter); // POST / = 购买资源包（kind='package' 订单）
+app.use('/api/finder', finderRouter); // POST /search 达人检索；POST /videos 作品列表（免费10/百条扣机会）
+app.use('/api/resolve', resolveRouter); // POST / = 额度直链（扣1条/24h免重扣/失败返还）
+if (config.mockPay) app.use('/api/dev', devRouter); // 模拟支付（仅本地联调）
 app.use('/api/auth', authRouter); // POST /login：wx.login code 换 skey（内容安全用）
 app.use('/api/security', securityRouter); // 内容安全检测 + 微信消息推送回调
 
@@ -29,23 +39,24 @@ app.use('/api/security', securityRouter); // 内容安全检测 + 微信消息�
 setInterval(async () => {
   const nowS = Date.now() / 1000;
   try {
-    // 1) pending 对账：超 60s 每轮查单（回调丢失兜底，微信回调打不进来时靠这里推进 paid）；
-    //    到期仍未付 → 关单过期
+    // 1) pending 对账：超 60s 每轮查单（回调丢失兜底，微信回调打不进来时靠这里推进）；
+    //    到期仍未付 → 关单过期。markPaidAndApply 统一落账：video→解析、package→入账余额（幂等）
     for (const o of orders.listByStatus('pending')) {
       let paid = false;
       if (nowS - o.created_at > 60) {
         const q = await queryOrder(o.id).catch(() => null);
         const state = q?.trade_state;
         if (state === 'SUCCESS') {
-          paid = orders.markPaid(o.id, q.transaction_id);
-          if (paid) resolve(o.id).catch(() => {});
+          const applied = orders.markPaidAndApply(o.id, q.transaction_id);
+          paid = !!applied;
+          if (applied?.kind === 'video') resolve(o.id).catch(() => {});
         } else if (o.expire_at <= nowS && state && state !== 'NOTPAY' && state !== 'CLOSED') {
           await closeOrder(o.id);
         }
       }
       if (!paid && o.expire_at <= nowS) orders.markExpired(o.id);
     }
-    // 2) paid/resolving 卡死超 10min → 再试解析（resolve 内部有防重入与次数控制）
+    // 2) paid/resolving 卡死超 10min → 再试解析（resolve 内部有防重入与次数控制；套餐单直落 credited 不会出现在这）
     for (const o of [...orders.listByStatus('paid'), ...orders.listByStatus('resolving')]) {
       const since = o.paid_at || o.created_at;
       if (nowS - since > 600 && o.resolve_attempts < 6) resolve(o.id).catch(() => {});

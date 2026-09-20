@@ -26,6 +26,7 @@ export function wxpay() {
 /** Native 下单 → code_url。time_expire 由调用方统一计算，保证与本地 expire_at 同源。
  *  SDK 所有方法统一返回 {status, data} 包装（非 2xx 也不抛），业务字段在 r.data。 */
 export async function createNativeOrder({ orderId, amountCents, description, timeExpire }) {
+  if (config.mockPay) return `weixin://mockpay/${orderId}`; // 模拟支付：伪 code_url，走 /api/dev/mock-pay 落账
   const r = await wxpay().transactions_native({
     description,
     out_trade_no: orderId,

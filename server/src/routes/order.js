@@ -10,6 +10,7 @@ const STATUS_MESSAGES = {
   paid: '支付成功，正在解析视频源',
   resolving: '正在解析视频源',
   resolved: '解析完成，可获取下载链接',
+  credited: '支付成功，套餐权益已到账（余额见 /api/user/me）',
   failed: '解析失败',
   refunded: '解析失败，已全额退款，费用将原路退回',
   expired: '订单已过期（未支付）',
@@ -33,6 +34,9 @@ const REFRESH_AFTER_S = 20 * 3600; // CDN 时效约 1 天，留 4h 余量
 orderRouter.get('/:id/deliver', orderAuth, async (req, res, next) => {
   try {
     let o = req.order;
+    if (o.kind === 'package') {
+      return res.status(409).json({ error: 'package_order', message: STATUS_MESSAGES[o.status] || '套餐订单无直链交付' });
+    }
     if (o.status === 'paid' || o.status === 'resolving') {
       return res.status(409).json({ error: 'not_ready', message: STATUS_MESSAGES[o.status] });
     }

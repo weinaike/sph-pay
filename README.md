@@ -46,10 +46,15 @@ docker compose logs -f                     # healthcheck 通过即就绪
 cd server
 npm ci --registry=https://registry.npmmirror.com
 MOCK_PAY=1 npm start
-# 联调闭环：
-# curl -X POST localhost:8787/api/preview -H 'content-type: application/json' -d '{"url":"<视频号链接>"}'
-# curl -X POST localhost:8787/api/dev/mock-pay/<order_id>     # 模拟支付成功
+# 联调闭环（单视频）：
+# curl -X POST localhost:8787/api/order -H 'content-type: application/json' -d '{"url":"<视频号链接>"}'
+# curl -X POST localhost:8787/api/dev/mock-pay/<order_id>     # 模拟支付成功（走与真实回调相同的落账路径）
 # 轮询 /api/order/<id>/status 到 resolved → /api/order/<id>/deliver
+# 联调闭环（资源包）：
+# curl -X POST localhost:8787/api/user                                 # 匿名开户拿 user_token
+# curl -X POST localhost:8787/api/package -H 'x-user-token: <token>' -H 'content-type: application/json' -d '{"package":"B"}'
+# curl -X POST localhost:8787/api/dev/mock-pay/<order_id>              # 到账 credited
+# curl localhost:8787/api/user/me -H 'x-user-token: <token>'           # link_quota=100, search_credits=10
 ```
 
 ## 安装 Claude Code skill
@@ -66,9 +71,15 @@ pip install --user qrcode pillow -i https://mirrors.aliyun.com/pypi/simple/
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/preview` | 提交链接 → 预览信息 + 订单 + 支付 code_url（IP 限流 5 次/分钟） |
-| GET | `/api/order/:id/status?token=` | 轮询订单状态 |
-| GET | `/api/order/:id/deliver?token=` | **已支付才返回** `{url, key_b64, enc_len, file_size, title}` |
+| POST | `/api/order` | 提交链接 → 预览信息 + 订单 + 支付 code_url（IP 限流 5 次/分钟） |
+| POST | `/api/user` | 匿名开户 → `user_token`（余额/已购挂它，丢失即丢余额；10 次/min/IP） |
+| GET | `/api/user/me` | `X-User-Token` → 余额（直链额度/百条机会）+ 已购套餐 |
+| POST | `/api/package` | `X-User-Token` + `{package:'A'\|'B'\|'C'}` → 资源包订单（A ¥5/10 条；B ¥30/100 条+10 次百条；C ¥50/200 条+20 次百条；**售出不退**，支付后即时到账） |
+| POST | `/api/finder/search` | `{keyword}` → 达人 Top10（免费匿名，10 次/min/IP） |
+| POST | `/api/finder/videos` | `{username}` → 前 10 条短链列表（免费匿名）；`{username, full:true}` + `X-User-Token` → 前 100 条（扣 1 次百条机会，同达人 24h 缓存代内免重扣；总数 ≤10 自动免扣；可用交付 <10 条全额返还） |
+| POST | `/api/resolve` | `X-User-Token` + `{url}` → 短链转直链，扣 1 条直链额度（同短链 24h 免重扣；解析失败自动返还；不足 402） |
+| GET | `/api/order/:id/status?token=` | 轮询订单状态（套餐单终态 `credited`） |
+| GET | `/api/order/:id/deliver?token=` | **已支付才返回** `{url, key_b64, enc_len, file_size, title}`（套餐单 409） |
 | POST | `/api/wxpay/notify` | 微信支付回调（raw body 验签） |
 | GET | `/healthz` | 健康检查 |
 

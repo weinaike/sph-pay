@@ -118,6 +118,21 @@ curl -s -m 10 -G http://127.0.0.1:2027/api/channels/contact/search \
 
 保活现状（2026-09）：无自动保活，页面恢复靠人工。已知根因优先级：宿主 mac-mini 睡眠（Docker VM 挂起 → 微信长连接全断，wechat.log 会留 `GetA8KeyResp` 错误痕迹）> 页面隔夜丢失 > 进程崩溃。`wx-keepalive`（xdotool 自动重开页面）落地前，隔夜后先跑 L2 再对外承诺检索可用。
 
+## 双渠道计费上线备注（2026-09-20，docs/plan-dual-channel-pricing.md）
+
+- **新端点**：`/api/user(+/me)`、`/api/package`、`/api/finder/{search,videos}`、`/api/resolve` 已公网放行（gost.conf，nginx 层**刻意不加限流**，应用层是唯一节拍：user 10 / package 5 / finder 10|6 / resolve 15(IP)+10(token) 次/min）。ban-sph.sh 口径无需变更——新端点的 401/402/429 是应用层响应，不进 nginx 403/fetch-429 计数。
+- **503 语义**：`finder_unavailable` = wx-webtop 注入断（探活与处置见上节，RPA daemon 自愈）；`resolve_failed` = 单视频解析失败（**额度已自动返还**，无需人工）。
+- **套餐对账 SQL**（usage_log 台账 vs orders）：
+  ```bash
+  docker exec sph-server node -e "
+  const db=require('better-sqlite3')('/app/data/orders.db',{readonly:true});
+  console.log('入账:',JSON.stringify(db.prepare(\"SELECT user_token,SUM(link_quota) q FROM users GROUP BY user_token\").all()));
+  console.log('购买单:',JSON.stringify(db.prepare(\"SELECT package,status,count(*) c FROM orders WHERE kind='package' GROUP BY package,status\").all()));
+  console.log('消费:',JSON.stringify(db.prepare(\"SELECT kind,refunded,count(*) c FROM usage_log GROUP BY kind,refunded\").all()));db.close()"
+  ```
+- **备份**：容器重建前 `docker cp sph-server:/app/data/orders.db data-backup-<date>.db`（含余额列 users 表，同样敏感）。
+- **RPA daemon 已知盲区**（2026-09-20 实录）：微信经自动重启后主窗标题是 `Weixin`（非「微信」）且视频号面板嵌在主窗内，daemon 标题分诊找不到窗口 → `ws_down` 卡住不自愈。手动恢复：`xdotool search --class WeChat` 找主窗 → `windowactivate` → 点侧栏视频号图标（随分辨率定位）→ `xdotool key ctrl+shift+r` 硬重载。daemon 侧待修（按 class 兜底匹配）。
+
 ## 风险提示
 - 解析单点是自有服务 sph.yes-tek.com（受控），其上游依赖 `.tencent.com` cookie 新鲜度（CookieCloud 自更新链），链断裂表现为持续解析失败→自动退款
 - 达人检索上游单点：wx-webtop 容器内的微信登录态（页面丢失/掉线即检索不可用，探测与处置见上节；掉线恢复需人工扫码）

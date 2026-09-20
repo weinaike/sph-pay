@@ -30,9 +30,9 @@ wxpayRouter.post('/notify', expressRaw(), async (req, res) => {
     const data = decryptResource({ ciphertext: r.ciphertext, nonce: r.nonce, associated_data: r.associated_data });
 
     if (data.trade_state === 'SUCCESS') {
-      const changed = orders.markPaid(data.out_trade_no, data.transaction_id);
-      console.log(`[notify] ${data.out_trade_no} 回调验签+解密通过 (txn ${data.transaction_id}, markPaid=${changed})`);
-      if (changed) {
+      const applied = orders.markPaidAndApply(data.out_trade_no, data.transaction_id);
+      console.log(`[notify] ${data.out_trade_no} 回调验签+解密通过 (txn ${data.transaction_id}, applied=${JSON.stringify(applied)})`);
+      if (applied?.kind === 'video') {
         resolve(data.out_trade_no).catch(e => console.error(`[notify] resolve 启动失败: ${e.message}`));
       }
     }

@@ -48,6 +48,8 @@ skill(客户端编排) ── preview/轮询/deliver ──► server(Express :8
 
 订单状态机：`pending → paid → resolving → resolved`；分支：`pending→expired`（15min 未付+关单）、`解析 3 次重试全败→failed→自动全额退款→refunded`。幂等靠 `UPDATE ... WHERE status='pending'`。
 
+**双渠道计费**（plan 见 `docs/plan-dual-channel-pricing.md`）：orders 表 `kind` 列区分 `video`（¥1 单视频）与 `package`（资源包 A/B/C，支付落账 `markPaidAndApply` 同事务入账 users 余额直落 `credited`，售出不退）；匿名账户 `users`（`X-User-Token`）挂直链额度/百条检索机会两种余额（永久有效，原子扣减防并发超扣），消费/去重台账在 `usage_log`。小程序渠道不经 sph-pay（直连 sph-api fetch/job，nginx 限频 5r/m）。
+
 **核心安全不变量**：`cdn_url`/`xor_key_b64` 只存在于 sqlite（`server/data/orders.db`，含密钥属敏感文件）和 deliver 响应中。preview/status 的响应必须过 zod 白名单序列化（`routes/preview.js`），新增字段需显式改 schema。支付前零下发。
 
 ### src/sph/ —— 解析隔离层
@@ -56,6 +58,11 @@ skill(客户端编排) ── preview/轮询/deliver ──► server(Express :8
 
 - `normalize.js`：输入归一化 → `contentId` + `shortUri`（短码是解析与预览的唯一有效身份）
 - `resolverClient.js`：自有解析 API 客户端。错误分类决定重试策略：`ResolverTransientError`（网络/超时/job interrupted）→ 上层重试；`ResolverFatalError`（job failed / 响应结构变化）→ 立即终止进退款（显式失败，绝不入库脏数据）。completed 载荷校验拆成纯函数 `validateCompleted` 供单测
+
+### src/finder/ —— 达人检索隔离层（M2，计划见 docs/plan-dual-channel-pricing.md）
+
+- `client.js`：wx-webtop（:2027，`FINDER_BASE`）三接口封装（search / feed_list / share_url）。**两个上游实测坑**：① object id 是 20 位数字超 JS 精度——必须走 json-bigint 无损解析；② feed_list 续页 `feedsCount=0`（不是缺失）——总数只信 `>0` 的页。FinderError 统一 503 `finder_unavailable`（search 超时=微信掉线，探活见 runbook）
+- `videos.js`：计费语义层。免费 10 条/百条扣机会、`finder_cache` 表作缓存代（fetched_at，TTL 24h 隔天刷新、落盘保代际跨重启）、`usage_log.chargedSince` 去重（同用户×同达人×当前代只扣一次）、总数 ≤10 自动免扣、可用交付 <10 返还
 
 ## 关键坑（均已踩过）
 

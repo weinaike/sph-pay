@@ -19,6 +19,7 @@ export async function resolve(orderId) {
     const order = orders.get(orderId);
     if (!order || !['paid', 'resolving', 'resolved'].includes(order.status)) return;
     if (order.status === 'resolved') return;
+    if (order.kind !== 'video') return; // 套餐单直落 credited，不走解析（防御性守卫）
     orders.markResolving(orderId);
 
     // 自有解析服务只接受 /sph/ 短链；export/objectId 订单 fail-fast（防 sweeper 无限重试）
