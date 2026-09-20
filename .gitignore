@@ -23,3 +23,7 @@ sph-downloads/
 .DS_Store
 
 skill-workspace/
+
+# Python 编译产物
+__pycache__/
+*.pyc
