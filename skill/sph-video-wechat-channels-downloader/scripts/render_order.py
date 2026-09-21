@@ -54,8 +54,7 @@ SKILL_DIR = SCRIPT_DIR.parent
 DEFAULT_MP_QR = SKILL_DIR / "assets" / "miniprogram-qr.png"
 DEFAULT_LOGO = SKILL_DIR / "assets" / "company-logo.png"
 
-# 小程序名（免费通道引导用）——单一事实源。模板经 __MP_NAME__ 占位符引用，
-# 文档/校验（scripts/check_consistency.py）以本常量为准；改名流程见 assets/README.md。
+# 小程序名（免费通道引导用）——单一事实源。模板经 __MP_NAME__ 占位符引用。
 MP_NAME = "越思工具"
 
 # 公司品牌（顶栏展示）：名称与官网链接。品牌串全库统一（FREE_ALT 的搜索关键词也用它）；
@@ -544,7 +543,7 @@ FREE_CARD_QR = r"""  <div class="card">
 
 # 免费卡右列（二维码右边）的第二个免费通道：网页版。
 # 文案只此一处，两个卡片变体（有码 / 无码降级）共用，避免改一处漏一处。
-# 搜索关键词与顶栏品牌同源（COMPANY_NAME），改品牌只动常量（rendering-dev.md §三）。
+# 搜索关键词与顶栏品牌同源（COMPANY_NAME），改品牌只动常量。
 FREE_ALT = f"""<div class="alt">
             手机不便？谷歌搜索 <code>{COMPANY_NAME}</code>，打开网页免费版，粘贴链接即可下载。
           </div>"""
@@ -568,7 +567,7 @@ FREE_CARD_TEXT = r"""  <div class="card">
 
 # 资源包定价——**单一事实源**：价格与权益只在本处定义，经 --dump-packages 对外输出；
 # 文档（SKILL.md / finder.md / api.md）只指向 dump，不抄写价目数字。
-# 真实计费在服务端（下单响应 amount_cents）：服务端改价 → 改这里 → 跑 scripts/check_consistency.py。
+# 真实计费在服务端（下单响应 amount_cents）：服务端改价 → 改这里。
 PACKAGES = [
     {"key": "A", "price": "5", "unit": "≈¥0.50/条", "items": ["10 条视频直链额度"]},
     {"key": "B", "price": "30", "unit": "≈¥0.30/条",
@@ -578,7 +577,7 @@ PACKAGES = [
 ]
 
 # 套餐与权益卡：**仅支付态**渲染（交付态用户已拿到文件，定价信息是噪音）。
-# 定价是「会改变批量用户下一步动作」的信息，按 rendering-dev.md §一③ 判据可进页面；
+# 定价是「会改变批量用户下一步动作」的信息，故可进页面；
 # 但信任话术（预检/退款/原画）仍一律不进。购买动作回到对话完成（页面纯静态、无支付发起能力）。
 PACK_CARD = r"""  <div class="card packcard">
     <div class="pad">
@@ -807,7 +806,7 @@ def build(args) -> Path:
                 .replace("__PACK_CARD__", pack_card)
                 .replace("__COUNTDOWN_JS__", cd_js))
     # __MP_NAME__ 必须在所有卡片插入**之后**统一替换：放替换链最前会被后插入的
-    # __GRID__ / __PACK_CARD__ 内部的同名占位符逃过（rendering-dev.md §一「模板拼装顺序」反例）
+    # __GRID__ / __PACK_CARD__ 内部的同名占位符逃过
     out_html = out_html.replace("__MP_NAME__", MP_NAME)
 
     # 安全网：任何残留占位符都要报出来，而不是静默写进 HTML

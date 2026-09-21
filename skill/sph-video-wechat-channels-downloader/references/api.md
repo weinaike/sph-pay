@@ -37,7 +37,7 @@ curl -X POST "https://sph.yes-tek.com/api/package" -H 'content-type: application
   -H "x-user-token: <token>" -d '{"package":"A"}'
 ```
 - 200 `{order_id, order_token, package, amount_cents, code_url, expire_at, granted:{link_quota,search_credits}, notice}`
-  - 三档 A/B/C；价格与 granted 内容的**本地镜像 = `render_order.py --dump-packages`**（服务端无价目查询端点；真实计费以下单响应 `amount_cents` 为准，服务端改价时同步 PACKAGES 并跑 `scripts/check_consistency.py`）。**售出不退、即时到账、永久有效**（notice 字段原样转达用户）
+  - 三档 A/B/C；价格与 granted 内容的**本地镜像 = `render_order.py --dump-packages`**（服务端无价目查询端点；真实计费以下单响应 `amount_cents` 为准，服务端改价时同步 PACKAGES）。**售出不退、即时到账、永久有效**（notice 字段原样转达用户）
 - 到账后状态 `credited`，余额实时累加；未付 15min 过期同普通订单。5 次/min/IP
 
 ## POST /api/finder/search（达人检索，免费）

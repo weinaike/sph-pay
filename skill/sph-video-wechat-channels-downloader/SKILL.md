@@ -5,7 +5,7 @@ description: 视频号（微信视频号 / WeChat Channels）视频下载与解�
 
 # 视频号下载与解析（原画直链 · 免费预览层）
 
-流程：**依赖预检** → 提取链接 → 创建订单 → **按轨道渲染预览页** → 扫码支付 → 轮询 → **下载到本地** → 汇报（交付物 = 本地文件路径）→ **同达人作品追问（6.5 节，免费）**。脚本在 `$SKILL_DIR/scripts/`；细节文档：`references/rendering.md`（渲染与交付·运行时口径）、`references/api.md`（API 契约）、`references/faq.md`（应答口径）、`references/finder.md`（达人检索与批量·钱包额度模式）、`assets/README.md`（小程序码素材，维护用）；**改渲染器 / 换素材 / 改价 / 改名时才读 `references/rendering-dev.md`（维护手册），运行时不用**。
+流程：**依赖预检** → 提取链接 → 创建订单 → **按轨道渲染预览页** → 扫码支付 → 轮询 → **下载到本地** → 汇报（交付物 = 本地文件路径）→ **同达人作品追问（6.5 节，免费）**。脚本在 `$SKILL_DIR/scripts/`；细节文档：`references/rendering.md`（渲染与交付·运行时口径）、`references/api.md`（API 契约）、`references/faq.md`（应答口径）、`references/finder.md`（达人检索与批量·钱包额度模式）。
 
 用户要**找达人 / 下载某达人的作品 / 批量下载多条**时改走第 9 节（钱包/额度模式，免逐条支付）；单视频且钱包已有直链额度时也可免支付直取（见第 9 节末）。
 
@@ -24,7 +24,7 @@ PY=$(python "$SKILL_DIR/scripts/ensure_deps.py" --python)   # 后续脚本统一
 
 | 依赖 | 谁在用 | 缺失后果 |
 |---|---|---|
-| `qrcode` + `pillow` | render_order / qr / prep_mp_qr | 第 3 步拒绝渲染，建订单全白做 |
+| `qrcode` + `pillow` | render_order / qr | 第 3 步拒绝渲染，建订单全白做 |
 | `ffmpeg` | 第 5/6 步读媒体信息、提音频 | 交付页无媒体信息、音频提取失败 |
 
 - 两者都装进同一个用户级隔离 venv（`~/.workbuddy/.cache/sph/venv`）：无需管理员、不动 PATH、不污染环境；`ensure_deps.py` 自动挑"能 import 成功"的解释器（venv → 当前 → PATH）。
