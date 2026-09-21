@@ -15,6 +15,7 @@ deploy/sph.env
 
 # 本地测试产物
 sph-downloads/
+sph-video-wechat-channels-downloader-workspace
 *.mp4
 *.mp4.enc
 *.log
