@@ -73,8 +73,12 @@ def main():
         path = args[i + 1] if i + 1 < len(args) else DEFAULT_PNG
         render_png(data, path)
         return
-    render_terminal(data, "--invert" in args)
-    print("（扫不出且终端为深色主题 → 加 --invert；仍不行 → --png /tmp/sph-qr.png）")
+    invert = "--invert" in args
+    render_terminal(data, invert)
+    # B 轨（纯终端）默认就带 --invert，提示要按当前极性给对应的下一步
+    print("（扫不出且终端为浅色主题 → 去掉 --invert；仍不行 → --png /tmp/sph-qr.png）"
+          if invert else
+          "（扫不出且终端为深色主题 → 加 --invert；仍不行 → --png /tmp/sph-qr.png）")
 
 
 if __name__ == "__main__":

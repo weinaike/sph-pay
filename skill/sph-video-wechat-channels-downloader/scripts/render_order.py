@@ -6,25 +6,33 @@
    页面可随意移动、离线打开，不依赖任何外部资源（也绕开防盗链与 CSP）。
 2. 二维码极性铁律：屏幕扫码必须「白底黑码」。页面外壳跟随深浅主题，
    但二维码一律画在固定的白色卡片上 —— 绝不跟随深色主题反色。
-3. 两阶段渲染：
-   --stage pay        下单后（封面凭证 + 免费小程序码 + 支付二维码 + 倒计时）
-   --stage delivered  解析完成后（**本地文件路径**为主交付物 + 媒体信息）
+3. 渲染阶段（pay / package-pay / delivered）：
+   --stage pay          单视频下单后（封面凭证 + 免费小程序码 + ¥1 支付二维码 + 倒计时）
+   --stage package-pay  用户说「买套餐 X」后：主卡换成**套餐订单自己的支付码**（每笔订单
+                       code_url 独立，复用不了 ¥1 那张；原单视频订单不付自动过期）。两种进法：
+                       --in 视频订单 + --package-order 套餐响应（单视频流中途换档，凭证/免费
+                       网格保留，重渲同一 HTML）；或 --in 直接是套餐响应（钱包/批量流无视频
+                       订单，渲染纯套餐页）。
+   --stage delivered    解析完成后（**本地文件路径**为主交付物 + 媒体信息）
    交付态默认**不显示 CDN 直链**：服务端不留存文件，直链会过期、对用户无沉淀价值，
    用户真正要的是「本地那个文件在哪」。需要时才加 --show-cdn-link。
 
 用法：
   render_order.py --in order.json --out page.html [选项]
 
-  --in        POST /api/order 的原始响应 JSON（或 --order-file .orders/<id>.json 的落盘件）
+  --in        POST /api/order 的原始响应 JSON（package-pay 第二进法下为 /api/package 响应）
   --url       原始分享短链（渲染到免费引导里，方便用户复制去小程序粘贴）
+  --package-order  POST /api/package（wallet.py buy）的原始响应 JSON；--stage package-pay 用
   --out       输出 HTML 路径
-  --stage     pay | delivered（默认 pay）
+  --stage     pay | package-pay | delivered（默认 pay）
   --local-path  已下载的本地 mp4 绝对路径（delivered 态主交付物）
   --deliver   GET /api/order/:id/deliver 的原始响应 JSON（可选，仅 --show-cdn-link 或取体积时需要）
   --probe     本机 ffprobe 输出的 JSON 文件（时长/体积/分辨率，可选）
   --miniprogram-qr  小程序码图片路径（默认取 <skill>/assets/miniprogram-qr.png）
   --no-remote 不联网拉取封面/头像，只用占位（离线/沙箱环境用）
   --quiet     只打印输出路径
+  --dump-packages  打印套餐价目与小程序名（JSON）后退出——对话侧/文档取价的**唯一事实源**；
+                  纯数据出口，不渲染、不需要 qrcode/pillow
 """
 from __future__ import annotations
 
@@ -44,22 +52,42 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 DEFAULT_MP_QR = SKILL_DIR / "assets" / "miniprogram-qr.png"
+DEFAULT_LOGO = SKILL_DIR / "assets" / "company-logo.png"
 
+# 小程序名（免费通道引导用）——单一事实源。模板经 __MP_NAME__ 占位符引用，
+# 文档/校验（scripts/check_consistency.py）以本常量为准；改名流程见 assets/README.md。
+MP_NAME = "越思工具"
+
+# 公司品牌（顶栏展示）：名称与官网链接。品牌串全库统一（FREE_ALT 的搜索关键词也用它）；
+# logo 为本地素材 assets/company-logo.png，base64 内嵌（单文件自包含铁律），缺失时顶栏降级为纯文字。
+COMPANY_NAME = "越思科技 Yes-Tek"
+COMPANY_URL = "https://www.yes-tek.com/"
+
+# 渲染依赖延迟到真正渲染时才检查：--dump-packages 只打印常量，不应因缺 qrcode/pillow 而失败。
 try:
     import qrcode
 except ImportError:
-    print(
-        "缺少 qrcode 库。请先运行同目录的 ensure_deps.py --install（自动装入隔离 venv），\n"
-        "再用 ensure_deps.py --python 输出的解释器运行本脚本。",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    qrcode = None
 
 try:
     from PIL import Image
 except ImportError:
-    print("缺少 pillow 库（用于封面压缩与二维码渲染）。", file=sys.stderr)
-    sys.exit(1)
+    Image = None
+
+
+def _require_deps():
+    if qrcode is None or Image is None:
+        missing = []
+        if qrcode is None:
+            missing.append("qrcode")
+        if Image is None:
+            missing.append("pillow")
+        print(
+            "缺少 " + "、".join(missing) + "。请先运行同目录的 ensure_deps.py --install"
+            "（自动装入隔离 venv），再用 ensure_deps.py --python 输出的解释器运行本脚本。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -215,7 +243,10 @@ body{margin:0;padding:24px;background:var(--bg);color:var(--tx);
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .pad{padding:18px}
 .topbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-.brand{font-size:15px;font-weight:500;letter-spacing:.2px}
+.brand{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:500;
+  letter-spacing:.2px;text-decoration:none;color:var(--tx);transition:opacity .15s}
+.brand:hover{opacity:.8}
+.brand img{width:22px;height:22px;border-radius:6px;display:block}
 .pill{font-size:12px;color:var(--tx2);border:1px solid var(--line2);border-radius:999px;
   padding:3px 10px;font-variant-numeric:tabular-nums}
 .pill.ok{color:var(--accent);background:var(--accent-bg);border-color:transparent}
@@ -297,13 +328,34 @@ button.primary:hover{opacity:.9}
 .merged .evidmeta{flex:1;min-width:0}
 .sect{margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
 .sect .pathlabel{margin-top:16px}
+/* 套餐卡（仅支付态，网格下方全宽）：定价是会改变批量用户动作的信息，不是话术，
+   独立成卡；支付卡仍只承载「扫码付 ¥1」一个动作（反模式：主卡加第三段）。 */
+.packcard{margin-top:16px}
+.packs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:680px){.packs{grid-template-columns:1fr}}
+.pack{background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;position:relative}
+/* 套餐支付态：正在支付的档位加 accent 描边（页面只说「付这张码」，对比信息保留在卡上） */
+.pack.active{border-color:var(--accent);background:var(--accent-bg)}
+.pack .pname{font-size:12.5px;color:var(--tx2)}
+.pack .pprice{font-size:22px;font-weight:500;letter-spacing:-.3px;margin:2px 0 6px;
+  font-variant-numeric:tabular-nums}
+.pack .pprice small{font-size:12px;font-weight:400;color:var(--tx3);margin-left:5px;letter-spacing:0}
+.pack ul{margin:0;padding-left:16px;font-size:12.5px;color:var(--tx2);line-height:1.7}
+.besttag{position:absolute;top:10px;right:10px;font-size:11px;color:var(--accent);
+  background:var(--accent-bg);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.packterms{margin-top:12px;font-size:12px;color:var(--tx3);line-height:1.75}
+.packterms b{font-weight:500;color:var(--tx2)}
+.packbuy{margin-top:8px;font-size:12.5px;color:var(--tx2);line-height:1.75}
+.packbuy code{background:var(--bg);border:1px solid var(--line);border-radius:5px;
+  padding:1px 6px;font-size:12px;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <div class="topbar">
-    <span class="brand">越思工具</span>
+    <a class="brand" href="__COMPANY_URL__" target="_blank" rel="noopener">__BRAND__</a>
     <span class="pill">订单 __ORDER_SHORT__</span>
     __STAGE_PILL__
   </div>
@@ -311,6 +363,8 @@ button.primary:hover{opacity:.9}
   <div class="mainwrap">__MAIN_CARD__</div>
 
 __GRID__
+
+__PACK_CARD__
 
   <div class="foot">
     __FOOT__
@@ -361,6 +415,32 @@ PAY_CARD = r"""  <div class="card">
             <b>收款方式</b><span>微信支付官方商户通道</span>
           </div>
           <div class="count" id="count">剩余支付时间计算中…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+"""
+
+# 套餐支付态主卡：结构与 PAY_CARD 同构（码 + 价格 + kv + 倒计时），
+# 差异只有三行：标题点明套餐档、kv 多一行「支付到账」（granted，用户付款前必须看到买什么）、
+# notice 三条款用 .note 强调（即时到账/售出不退/永久有效是交易条款，不是卖点话术）。
+PACKAGE_PAY_CARD = r"""  <div class="card">
+    <div class="pad">
+      <div class="cardhead">
+        <h2>扫码支付 · 套餐 __PKG_NAME__</h2>
+      </div>
+      <div class="paywrap">
+        <div class="qr"><img alt="微信支付二维码" src="__PAY_QR__"></div>
+        <div class="paymid">
+          <div class="price">¥__PRICE__<small>一次性</small></div>
+          <div class="kv">
+            <b>订单号</b><span>__ORDER_ID__</span>
+            <b>付款截止</b><span>__EXPIRE_LOCAL__</span>
+            <b>支付到账</b><span>__GRANTED__</span>
+            <b>收款方式</b><span>微信支付官方商户通道</span>
+          </div>
+          <div class="count" id="count">剩余支付时间计算中…</div>
+          <div class="note" style="margin-top:10px">__NOTICE__</div>
         </div>
       </div>
     </div>
@@ -448,11 +528,11 @@ FREE_CARD_QR = r"""  <div class="card">
     <div class="pad">
       <h2>不想付费 · 免费通道</h2>
       <div class="free">
-        <div class="qr"><img alt="越思工具 小程序码" src="__MP_QR__"></div>
+        <div class="qr"><img alt="__MP_NAME__ 小程序码" src="__MP_QR__"></div>
         <div class="steps">
           <ol>
             <li>用微信「扫一扫」扫描上方小程序码</li>
-            <li>也可手动搜索小程序 <code>越思工具</code></li>
+            <li>也可手动搜索小程序 <code>__MP_NAME__</code></li>
             <li>把这条链接粘进去即可下载</li>
           </ol>
           __FREE_ALT__
@@ -464,8 +544,9 @@ FREE_CARD_QR = r"""  <div class="card">
 
 # 免费卡右列（二维码右边）的第二个免费通道：网页版。
 # 文案只此一处，两个卡片变体（有码 / 无码降级）共用，避免改一处漏一处。
-FREE_ALT = r"""<div class="alt">
-            手机不便？谷歌搜索 <code>越思科技Yes-Tek</code>，打开网页免费版，粘贴链接即可下载。
+# 搜索关键词与顶栏品牌同源（COMPANY_NAME），改品牌只动常量（rendering-dev.md §三）。
+FREE_ALT = f"""<div class="alt">
+            手机不便？谷歌搜索 <code>{COMPANY_NAME}</code>，打开网页免费版，粘贴链接即可下载。
           </div>"""
 
 FREE_CARD_TEXT = r"""  <div class="card">
@@ -474,7 +555,7 @@ FREE_CARD_TEXT = r"""  <div class="card">
       <div class="steps">
         <ol>
           <li>打开微信 → 发现 → 小程序</li>
-          <li>搜索 <code>越思工具</code></li>
+          <li>搜索 <code>__MP_NAME__</code></li>
           <li>把这条链接粘进去即可下载</li>
         </ol>
         <div class="desc" id="shareurl" style="margin-top:12px">__URL__</div>
@@ -484,6 +565,51 @@ FREE_CARD_TEXT = r"""  <div class="card">
     </div>
   </div>
 """
+
+# 资源包定价——**单一事实源**：价格与权益只在本处定义，经 --dump-packages 对外输出；
+# 文档（SKILL.md / finder.md / api.md）只指向 dump，不抄写价目数字。
+# 真实计费在服务端（下单响应 amount_cents）：服务端改价 → 改这里 → 跑 scripts/check_consistency.py。
+PACKAGES = [
+    {"key": "A", "price": "5", "unit": "≈¥0.50/条", "items": ["10 条视频直链额度"]},
+    {"key": "B", "price": "30", "unit": "≈¥0.30/条",
+     "items": ["100 条视频直链额度", "10 次达人百条列表"]},
+    {"key": "C", "price": "50", "unit": "≈¥0.25/条", "best": True,
+     "items": ["200 条视频直链额度", "20 次达人百条列表"]},
+]
+
+# 套餐与权益卡：**仅支付态**渲染（交付态用户已拿到文件，定价信息是噪音）。
+# 定价是「会改变批量用户下一步动作」的信息，按 rendering-dev.md §一③ 判据可进页面；
+# 但信任话术（预检/退款/原画）仍一律不进。购买动作回到对话完成（页面纯静态、无支付发起能力）。
+PACK_CARD = r"""  <div class="card packcard">
+    <div class="pad">
+      <h2>要下载多条？资源包比单条划算（单条 ¥1/次）</h2>
+      <div class="packs">__PACK_ITEMS__</div>
+      <div class="packterms">
+        权益条款：支付后<b>即时到账</b> · 余额<b>永久有效</b> · 虚拟权益<b>售出不退</b>。
+        达人检索与每位达人前 10 条作品列表永久免费。
+      </div>
+      <div class="packbuy">
+        购买：回到对话说 <code>买套餐 B</code>（或 A / C），扫码支付后额度实时到账；
+        套餐额度同样能下载本条视频——买完这条就不必再付 ¥1。
+      </div>
+    </div>
+  </div>
+"""
+
+
+def pack_items_html(active: str | None = None) -> str:
+    out = []
+    for p in PACKAGES:
+        tag = '<span class="besttag">单价最低</span>' if p.get("best") else ""
+        cls = ' class="pack active"' if active and p["key"] == active else ' class="pack"'
+        items = "".join(f"<li>{esc(i)}</li>" for i in p["items"])
+        out.append(
+            f'<div{cls}>{tag}\n'
+            f'          <div class="pname">套餐 {esc(p["key"])}</div>\n'
+            f'          <div class="pprice">¥{esc(p["price"])}<small>{esc(p["unit"])}</small></div>\n'
+            f'          <ul>{items}</ul>\n        </div>')
+    return "".join(out)
+
 
 COUNTDOWN = r"""
 (function(){
@@ -506,17 +632,53 @@ COUNTDOWN = r"""
 
 
 # ---------------------------------------------------------------- 主流程
+def free_grid(args) -> str:
+    """支付态 / 套餐支付态共用的两列网格（凭证卡占位符由 fill_common 统一填）。"""
+    mp = Path(args.miniprogram_qr) if args.miniprogram_qr else DEFAULT_MP_QR
+    mp_uri = png_data_uri(mp) if mp.exists() else ""
+    share_url = args.url or ""
+    if mp_uri:
+        free_card = FREE_CARD_QR.replace("__MP_QR__", mp_uri)
+    else:
+        free_card = FREE_CARD_TEXT.replace("__URL__", esc(share_url))
+        if not share_url:
+            # 没有原始短链时不显示空链接块
+            free_card = free_card.replace(
+                '<div class="desc" id="shareurl" style="margin-top:12px"></div>', "")
+            free_card = free_card.replace(
+                '<div class="btnrow"><button onclick="copyEl(\'shareurl\')">复制链接</button></div>', "")
+    # 网页版提示：与二维码素材是否存在无关，两个变体都要有
+    free_card = free_card.replace("__FREE_ALT__", FREE_ALT)
+    return GRID.replace("__FREE_CARD__", free_card)
+
+
 def build(args) -> Path:
+    _require_deps()  # --dump-packages 在 main() 里已提前返回，不经过这里
     raw = json.loads(Path(args.infile).read_text(encoding="utf-8"))
     preview = raw.get("preview") or {}
     order_id = raw.get("order_id", "")
     expire_at = raw.get("expire_at") or 0
     amount = raw.get("amount_cents")
 
+    # 套餐支付态：pkg 优先取 --package-order；未给时 --in 即套餐响应（钱包/批量流无视频订单）
+    pkg: dict = {}
+    if args.package_order:
+        pkg = json.loads(Path(args.package_order).read_text(encoding="utf-8"))
+    pkg_only = args.stage == "package-pay" and not args.package_order
+    if pkg_only:
+        pkg = raw
+
     title = clean_title(preview.get("title") or raw.get("title")) or "未命名视频"
+    if pkg_only:
+        title = f"套餐 {pkg.get('package') or ''}".strip()
     # 注意：preview.description 是作者自带的视频描述（话题标签串），不是口播文案，
     # 不进页面、不标"文案"、不提供复制。真实逐字稿需本地 ASR 另行产出。
     # 标签串只在对话侧按需给出（extract_tags），页面里不留任何痕迹。
+
+    # 顶栏品牌：公司 logo（本地素材，缺省降级纯文字）+ 名称，整体链到官网（新窗口）
+    logo_uri = png_data_uri(DEFAULT_LOGO) if DEFAULT_LOGO.exists() else ""
+    brand_html = ((f'<img alt="{esc(COMPANY_NAME)}" src="{logo_uri}">' if logo_uri else "")
+                  + esc(COMPANY_NAME))
 
     # 封面 / 头像
     if args.no_remote:
@@ -535,7 +697,7 @@ def build(args) -> Path:
         meta.append(f'<span>{fmt_ymd(preview["created_at"])}</span>')
     meta_extra = "".join(meta)
 
-    # 主卡：支付 or 已交付
+    # 主卡：支付 / 套餐支付 / 已交付
     if args.stage == "delivered":
         if not args.local_path and not args.deliver:
             print("--stage delivered 至少需要 --local-path <本地 mp4 路径>", file=sys.stderr)
@@ -574,10 +736,39 @@ def build(args) -> Path:
                      .replace("__CDN_BLOCK__", cdn_block))
         stage_pill = '<span class="pill ok">解析完成</span>'
         cd_js = ""
-        # 交付态：不渲染网格（无免费通道），也不内嵌小程序码
+        # 交付态：不渲染网格（无免费通道），也不内嵌小程序码，更不带套餐卡（定价信息是噪音）
         grid_html = ""
+        pack_card = ""
         # 交付页没有任何二维码，页脚不能说"二维码已内嵌"（那是支付态的事实）
         foot = "视频仅供个人学习备份，请勿用于商业用途。本页为单文件离线页面，不含任何跟踪脚本。"
+    elif args.stage == "package-pay":
+        if not pkg.get("code_url"):
+            print("--stage package-pay 需要 --package-order（/api/package 响应），"
+                  "或让 --in 直接是该响应", file=sys.stderr)
+            sys.exit(2)
+        g = pkg.get("granted") or {}
+        granted = "、".join(x for x in (
+            f"{g['link_quota']} 条直链额度" if g.get("link_quota") else "",
+            f"{g['search_credits']} 次达人百条列表" if g.get("search_credits") else "",
+        ) if x) or "—"
+        notice = pkg.get("notice") or "虚拟权益支付后即时到账 · 售出不退 · 余额永久有效"
+        amt = pkg.get("amount_cents")
+        main_card = (PACKAGE_PAY_CARD
+                     .replace("__PAY_QR__", qr_data_uri(pkg["code_url"]))
+                     .replace("__PKG_NAME__", esc(pkg.get("package") or "?"))
+                     .replace("__PRICE__", f"{amt / 100:.2f}" if isinstance(amt, int) else "—")
+                     .replace("__ORDER_ID__", esc(pkg.get("order_id", "")))
+                     .replace("__EXPIRE_LOCAL__", fmt_ts(pkg.get("expire_at")))
+                     .replace("__GRANTED__", esc(granted))
+                     .replace("__NOTICE__", esc(notice)))
+        stage_pill = '<span class="pill ok">待支付 · 套餐</span>'
+        cd_js = COUNTDOWN.replace("__EXPIRE_UNIX__", str(int(pkg.get("expire_at") or 0)))
+        base_foot = "本页为单文件离线页面，不含任何跟踪脚本；二维码图片已内嵌，可直接保存本文件转发。"
+        foot = (("视频仅供个人学习备份，请勿用于商业用途。" if not pkg_only
+                 else "虚拟权益即时到账 · 售出不退 · 余额永久有效。") + base_foot)
+        # 凭证/免费网格仅当有视频订单时保留（单视频流中途换档）；纯套餐页不渲染
+        grid_html = "" if pkg_only else free_grid(args)
+        pack_card = PACK_CARD.replace("__PACK_ITEMS__", pack_items_html(pkg.get("package")))
     else:
         main_card = (PAY_CARD.replace("__PRICE__", f"{amount / 100:.2f}" if isinstance(amount, int) else "—")
                      .replace("__PAY_QR__", qr_data_uri(raw.get("code_url", "")))
@@ -587,24 +778,9 @@ def build(args) -> Path:
         cd_js = COUNTDOWN.replace("__EXPIRE_UNIX__", str(int(expire_at or 0)))
         foot = ("视频仅供个人学习备份，请勿用于商业用途。本页为单文件离线页面，不含任何跟踪脚本；"
                 "二维码图片已内嵌，可直接保存本文件转发。")
-
-        # 免费卡：优先内嵌小程序码，缺素材时降级文字引导
-        mp = Path(args.miniprogram_qr) if args.miniprogram_qr else DEFAULT_MP_QR
-        mp_uri = png_data_uri(mp) if mp.exists() else ""
-        share_url = args.url or ""
-        if mp_uri:
-            free_card = FREE_CARD_QR.replace("__MP_QR__", mp_uri)
-        else:
-            free_card = FREE_CARD_TEXT.replace("__URL__", esc(share_url))
-            if not share_url:
-                # 没有原始短链时不显示空链接块
-                free_card = free_card.replace(
-                    '<div class="desc" id="shareurl" style="margin-top:12px"></div>', "")
-                free_card = free_card.replace(
-                    '<div class="btnrow"><button onclick="copyEl(\'shareurl\')">复制链接</button></div>', "")
-        # 网页版提示：与二维码素材是否存在无关，两个变体都要有
-        free_card = free_card.replace("__FREE_ALT__", FREE_ALT)
-        grid_html = GRID.replace("__FREE_CARD__", free_card)
+        grid_html = free_grid(args)
+        # 套餐与权益：仅支付态，网格下方全宽卡（购买引导指向对话）
+        pack_card = PACK_CARD.replace("__PACK_ITEMS__", pack_items_html())
 
     # ---- 卡片内的公共占位符（封面/标题/作者…）在插入 TPL 之前就填掉 ----
     # 这样主替换链只负责 5 个顶层占位符，不依赖"先替换哪个"的顺序。
@@ -618,14 +794,21 @@ def build(args) -> Path:
     main_card = fill_common(main_card)
     grid_html = fill_common(grid_html)
 
+    bar_id = (pkg.get("order_id") if args.stage == "package-pay" and pkg.get("order_id") else order_id)
     out_html = (TPL
-                .replace("__PAGE_TITLE__", esc(f"{title} · 越思工具"))
-                .replace("__ORDER_SHORT__", esc(order_id.split("_")[-1][:8] if order_id else "—"))
+                .replace("__PAGE_TITLE__", esc(f"{title} · {MP_NAME}"))
+                .replace("__COMPANY_URL__", esc(COMPANY_URL))
+                .replace("__BRAND__", brand_html)
+                .replace("__ORDER_SHORT__", esc(bar_id.split("_")[-1][:8] if bar_id else "—"))
                 .replace("__STAGE_PILL__", stage_pill)
                 .replace("__FOOT__", foot)
                 .replace("__MAIN_CARD__", main_card)
                 .replace("__GRID__", grid_html)
+                .replace("__PACK_CARD__", pack_card)
                 .replace("__COUNTDOWN_JS__", cd_js))
+    # __MP_NAME__ 必须在所有卡片插入**之后**统一替换：放替换链最前会被后插入的
+    # __GRID__ / __PACK_CARD__ 内部的同名占位符逃过（rendering-dev.md §一「模板拼装顺序」反例）
+    out_html = out_html.replace("__MP_NAME__", MP_NAME)
 
     # 安全网：任何残留占位符都要报出来，而不是静默写进 HTML
     left = sorted(set(re.findall(r"__[A-Z_]+__", out_html)))
@@ -640,10 +823,15 @@ def build(args) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="infile", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--in", dest="infile", required=False,
+                    help="POST /api/order 的原始响应 JSON（package-pay 第二进法下为 /api/package 响应）")
+    ap.add_argument("--dump-packages", action="store_true",
+                    help="打印套餐价目与小程序名（JSON）后退出——取价的唯一事实源，无需任何依赖")
+    ap.add_argument("--out", required=False)
     ap.add_argument("--url", default="")
-    ap.add_argument("--stage", choices=["pay", "delivered"], default="pay")
+    ap.add_argument("--package-order", default="",
+                    help="POST /api/package（wallet.py buy）响应 JSON；--stage package-pay 用")
+    ap.add_argument("--stage", choices=["pay", "package-pay", "delivered"], default="pay")
     ap.add_argument("--local-path", default="",
                     help="已下载的本地 mp4 绝对路径（交付态的主交付物）")
     ap.add_argument("--show-cdn-link", action="store_true",
@@ -654,6 +842,13 @@ def main() -> int:
     ap.add_argument("--no-remote", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+
+    if args.dump_packages:
+        print(json.dumps({"mp_name": MP_NAME, "packages": PACKAGES},
+                         ensure_ascii=False, indent=2))
+        return 0
+    if not args.infile or not args.out:
+        ap.error("渲染需要 --in 与 --out（或改用 --dump-packages 只取价目）")
 
     try:
         out = build(args)

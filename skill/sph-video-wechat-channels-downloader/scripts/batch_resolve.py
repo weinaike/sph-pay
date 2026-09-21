@@ -153,7 +153,7 @@ def main():
     print(f"\n完成：成功 {ok} / 失败 {failed} / 未处理（额度不足或跳过） {skipped}")
     print(f"结果文件：{os.path.abspath(out_path)}（重试用 --skip 该文件）")
     if quota_exhausted:
-        print("额度不足：按剩余条数购资源包（≤10条→A ¥5；≤100条→B ¥30；更多→C ¥50），到账后 --skip 续跑")
+        print("额度不足：购资源包后 --skip 续跑（档位与价格见 render_order.py --dump-packages，勿凭记忆报价）")
         return 2
     return 0
 

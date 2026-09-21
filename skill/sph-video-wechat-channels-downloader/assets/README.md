@@ -2,18 +2,30 @@
 
 本目录**只放图片素材**，不放脚本。
 
-## 小程序名（改名时的单一事实源）
+## 小程序名（单一事实源与校验）
 
-免费通道的小程序名 = **越思工具**。这个名字**散落在 4 个文件**，改动时必须同步，否则会出现"页面顶栏一个名、引导用户搜索另一个名"的错位：
+免费通道的小程序名 = **越思工具**，定义在 `scripts/render_order.py` 的 `MP_NAME` 常量（顶栏 `.brand`、`<title>` 后缀、小程序码 `alt`、引导 `<code>` 都经 `__MP_NAME__` 占位符自动跟随）。文档里仍会以文字提到它（用户要照着搜），出现位置：
 
 | 文件 | 位置 |
 |---|---|
-| `SKILL.md` | frontmatter `description`、免费层口径、A 轨对话模板、必传达内容、第 7 节免费方式 |
-| `references/rendering.md` | 对话侧模板、降级文字引导卡 |
-| `scripts/render_order.py` | 顶栏 `.brand`、`<title>` 后缀、小程序码 `alt`、两步引导里的 `<code>` |
+| `scripts/render_order.py` | `MP_NAME` 常量（定义处，模板引用它） |
+| `SKILL.md` | 免费层口径、A 轨对话模板、必传达内容、第 7 节免费方式 |
+| `references/rendering.md` | 免费卡降级文字引导 |
+| `references/rendering-dev.md` | 单一事实源说明（§三） |
+| `references/faq.md` | 合规口径（运营主体） |
 | `assets/README.md` | 本文件 |
 
-改名后跑一遍：`grep -rn "<旧名>" "$SKILL_DIR" --include="*.md" --include="*.py"`，应无输出。同时记得 `rm -rf scripts/__pycache__`（旧字节码里也留着旧字符串）。
+改名：只改 `MP_NAME` 一处 → 跑 `python scripts/check_consistency.py` 校验全库一致（书名号名称、`__MP_NAME__` 占位符残留、套餐价目漂移三查）→ `rm -rf scripts/__pycache__`（旧字节码里也留着旧字符串）。
+
+## company-logo.png
+
+顶栏**公司品牌标识**：22px 圆角 logo + 「越思科技 Yes-Tek」文字，整体 `<a>` 链到官网（`render_order.py` 的 `COMPANY_URL`，新窗口打开）。三个阶段（支付 / 套餐支付 / 交付）的顶栏共用。
+
+- **来源**：官网 apple-touch-icon `https://www.yes-tek.com/assets/ic_launcher.png`（512×512 透明底）。
+- **规格**：等比压到 64×64、PNG 透明底、约 5KB。显示 22px × retina 3x = 66px，64px 基本无插值放大；换图时保持 ≤64px 边长即可，CSS 不用动。
+- **内嵌方式**：`png_data_uri()` 原样读字节（二维码级同款处理，不做有损压缩）。
+- **未放置时**：顶栏自动降级为纯文字品牌（名称与官网链接仍在），不报错。
+- **名称/官网改动**：改 `render_order.py` 的 `COMPANY_NAME` / `COMPANY_URL` 常量（顶栏与免费卡搜索关键词同源），跑 `python scripts/check_consistency.py` 校验。
 
 ## miniprogram-qr.png
 

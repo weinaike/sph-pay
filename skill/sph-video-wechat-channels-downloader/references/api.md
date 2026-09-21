@@ -1,6 +1,6 @@
 # 后端 API 契约速查
 
-## POST /api/order（创建订单 · 单视频按次 ¥1）
+## POST /api/order（创建订单 · 单视频按次 ¥1，以 /healthz 的 price_cents 为准）
 ```bash
 curl -X POST "https://sph.yes-tek.com/api/order" -H 'content-type: application/json' -d '{"url":"<原始链接>"}'
 ```
@@ -37,7 +37,7 @@ curl -X POST "https://sph.yes-tek.com/api/package" -H 'content-type: application
   -H "x-user-token: <token>" -d '{"package":"A"}'
 ```
 - 200 `{order_id, order_token, package, amount_cents, code_url, expire_at, granted:{link_quota,search_credits}, notice}`
-  - A ¥5=10 条；B ¥30=100 条+10 次百条；C ¥50=200 条+20 次百条。**售出不退、即时到账、永久有效**（notice 字段原样转达用户）
+  - 三档 A/B/C；价格与 granted 内容的**本地镜像 = `render_order.py --dump-packages`**（服务端无价目查询端点；真实计费以下单响应 `amount_cents` 为准，服务端改价时同步 PACKAGES 并跑 `scripts/check_consistency.py`）。**售出不退、即时到账、永久有效**（notice 字段原样转达用户）
 - 到账后状态 `credited`，余额实时累加；未付 15min 过期同普通订单。5 次/min/IP
 
 ## POST /api/finder/search（达人检索，免费）
@@ -63,7 +63,7 @@ curl ... -H "x-user-token: <token>" \
 curl -X POST "https://sph.yes-tek.com/api/resolve" -H 'content-type: application/json' \
   -H "x-user-token: <token>" -d '{"url":"https://weixin.qq.com/sph/xxxx"}'
 ```
-- 200 `{url, file_size, title, charged}` —— 扣 1 条直链额度；同短链 24h 内 `charged:false` 免重扣
+- 200 `{url, file_size, title, author, charged}` —— 扣 1 条直链额度；同短链 24h 内 `charged:false` 免重扣；`author`=达人昵称（2026-09-21 起，上游缺省为 `''`）
 - 402 `no_link_quota`（message 含三选项引导：套餐 / 单条 ¥1 / 小程序免费）
 - 503 `resolve_failed` **额度已自动返还**；400 `unsupported_link`（仅短链）
 - 限频 15 次/min/IP + 10 次/min/token（批量串行每条间隔 ≥6.5s；batch_resolve.py 已内置节奏与 429 自动退避）

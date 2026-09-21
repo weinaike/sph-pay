@@ -60,19 +60,19 @@ printf '%s\n' <短链1> <短链2> ... > ./sph-downloads/urls.txt
 
 ## 4. 额度不足与套餐购买（402 应对）
 
-按**待转条数**推荐：
+价目、各档额度与权益**只有一个事实源**，报价前先取数：
 
-| 待转条数 | 推荐 | 内容 |
-|---|---|---|
-| ≤10 条 | 资源包 A ¥5 | 10 条直链 |
-| ≤100 条 | 资源包 B ¥30 | 100 条直链 + 10 次百条检索 |
-| >100 条 / 常用 | 资源包 C ¥50 | 200 条直链 + 20 次百条检索 |
+```bash
+"$PY" "$SKILL_DIR/scripts/render_order.py" --dump-packages   # JSON：mp_name + packages（价格/单条折算/权益条目）
+```
+
+向用户报价、推荐、写套餐卡都用这份输出，**不凭记忆写价格**。推荐档位按**待转条数**取最小满足档（额度 ≈10 条→A；≈100 条→B；更多/常用→C）。
 
 **购买前必达三条**（引导付费时明确告知）：**虚拟权益支付后即时到账 · 售出不退 · 余额永久有效**。
 
 ```bash
 "$PY" "$SKILL_DIR/scripts/wallet.py" buy B                       # → {order_id, order_token, code_url, ...}
-"$PY" "$SKILL_DIR/scripts/qr.py" "<code_url>" --png "./sph-downloads/套餐支付码.png"
+"$PY" "$SKILL_DIR/scripts/qr.py" "<code_url>" --invert    # B 轨·纯终端；有桌面则渲套餐页（SKILL.md 第 9 节第 5 步）
 "$PY" "$SKILL_DIR/scripts/poll.py" --order <order_id> --token <order_token> --terminal credited
 "$PY" "$SKILL_DIR/scripts/wallet.py" me                           # 确认到账后继续批量
 ```
@@ -81,11 +81,11 @@ printf '%s\n' <短链1> <短链2> ... > ./sph-downloads/urls.txt
 
 ## 5. 单视频 + 有额度：免支付直取
 
-钱包存在且 `link_quota > 0` 时，单条视频不必走 ¥1 订单流（SKILL.md 第 2~4 步），直接：
+钱包存在且 `link_quota > 0` 时，单条视频不必走按次付费的订单流（SKILL.md 第 2~4 步），直接：
 
 ```bash
 curl -sS -X POST "https://sph.yes-tek.com/api/resolve" \
   -H 'content-type: application/json' -H "x-user-token: <token>" -d '{"url":"<短链>"}'
 ```
 
-→ `{url, file_size, title, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同第 5/6 步。无钱包/无额度 → 走原订单流。
+→ `{url, file_size, title, author, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同第 5/6 步，交付后追问同达人其他作品见 SKILL.md 6.5 节（响应自带 `author` 达人昵称，空串才问用户）。无钱包/无额度 → 走原订单流。
