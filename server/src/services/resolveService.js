@@ -65,7 +65,7 @@ export async function resolve(orderId) {
 
 /** 解析并 HEAD 校准（不落库；deliver 刷新 CDN 时效时复用）。明文直链：无 XOR、无 x-enclen。 */
 export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } = {}) {
-  const { cdnUrl, title } = await resolveVideo(shareUrl, { forceRefresh, timeoutMs });
+  const { cdnUrl, title, author } = await resolveVideo(shareUrl, { forceRefresh, timeoutMs });
 
   // HEAD 校准：可达性 + 真实 file_size
   const head = await fetch(cdnUrl, { method: 'HEAD', signal: AbortSignal.timeout(config.sph.requestTimeoutMs) });
@@ -78,6 +78,7 @@ export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } 
     encLen: 0,
     fileSize,
     title: title || 'sph_video',
+    author: author || '', // 达人昵称：/api/resolve 出参用（skill 6.5 同达人追问）；markResolved 解构不取、自然忽略
   };
 }
 

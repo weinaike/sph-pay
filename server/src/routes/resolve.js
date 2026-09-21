@@ -14,6 +14,7 @@ const outSchema = z.object({
   url: z.string(),
   file_size: z.number().int().nonnegative(),
   title: z.string(),
+  author: z.string(), // 达人昵称（上游缺省为 ''，客户端需兜底）
   charged: z.boolean(), // false = 24h 内同短链免重扣
 });
 
@@ -62,7 +63,7 @@ resolveRouter.post('/', ipLimit, tokenLimit, userAuth, async (req, res, next) =>
 
     try {
       const r = await resolveOnce(shareUrl, { timeoutMs: 30_000 });
-      res.json(outSchema.parse({ url: r.cdnUrl, file_size: r.fileSize, title: r.title, charged: !deduped }));
+      res.json(outSchema.parse({ url: r.cdnUrl, file_size: r.fileSize, title: r.title, author: r.author, charged: !deduped }));
     } catch (e) {
       if (logId != null) { // 解析失败：本次扣减作废
         users.refundLinkQuota(token);
