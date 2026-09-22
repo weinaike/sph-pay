@@ -20,6 +20,7 @@ const responseSchema = z.object({
   amount_cents: z.number().int().positive(),
   code_url: z.string(),
   expire_at: z.number().int(),
+  page_url: z.string(), // 托管订单页（/p/:id）：预览+支付码+状态自推进，skill 只需把这条给用户
   preview: z.object({
     title: z.string(),
     author: z.string(),
@@ -30,6 +31,9 @@ const responseSchema = z.object({
     likes: z.string(),
     content_id: z.string(),
     file_size: z.number().int().nonnegative(), // 预解析 HEAD 校准的真实大小（证明可获取，也让用户付费前知道体积）
+    duration_s: z.number().int().nullable(),   // mp4 头解析（moov 自解析，探测失败为 null）
+    width: z.number().int().nullable(),
+    height: z.number().int().nullable(),
   }),
 });
 
@@ -86,6 +90,8 @@ orderCreateRouter.post('/', rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf })
       id: orderId, token: orderToken, contentId, shareUrl,
       amountCents: config.priceCents, expireAt, previewJson,
       cdnUrl: pre.cdnUrl, fileSize: pre.fileSize, title: pre.title, // 预解析结果落库，支付后直接下发
+      codeUrl, // 托管页渲染支付码用（微信 Native 码随订单终身有效）
+      durationS: pre.durationS, width: pre.width, height: pre.height,
     });
 
     // 白名单序列化（多余字段直接丢弃）
@@ -95,11 +101,13 @@ orderCreateRouter.post('/', rateLimit({ windowMs: 60_000, max: 5, keyFn: ipOf })
       amount_cents: config.priceCents,
       code_url: codeUrl,
       expire_at: expireAt,
+      page_url: `${config.publicBase}/p/${orderId}?t=${orderToken}`,
       preview: {
         title: preview.title, author: preview.author, avatar: preview.avatar, cover: preview.cover,
         description: preview.description, created_at: preview.created_at, likes: preview.likes,
         content_id: contentId,
         file_size: pre.fileSize,
+        duration_s: pre.durationS, width: pre.width, height: pre.height,
       },
     });
     res.json(out);

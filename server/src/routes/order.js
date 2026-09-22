@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { Readable } from 'node:stream';
 import { orders } from '../db.js';
 import { orderAuth } from '../middleware/orderAuth.js';
 import { resolve, resolveOnce } from '../services/resolveService.js';
+import { config } from '../config.js';
+import { xorDecryptStream } from '../sph/decryptStream.js';
 
 export const orderRouter = Router();
 
@@ -60,8 +63,63 @@ orderRouter.get('/:id/deliver', orderAuth, async (req, res, next) => {
       url: o.cdn_url,
       key_b64: encrypted ? o.xor_key_b64 : '',
       enc_len: encrypted ? (o.enc_len || 131072) : 0,
+      // 历史加密订单：服务端解密代理（Range 流式 XOR），客户端 curl 直下、无需本地解密
+      proxy_url: encrypted ? `${config.publicBase}/api/order/${o.id}/file?token=${o.order_token}` : '',
       file_size: o.file_size,
+      duration_s: o.duration_s ?? null, // mp4 头解析元数据（可能为 null，客户端需兜底）
+      width: o.width ?? null,
+      height: o.height ?? null,
       title: o.title || 'sph_video',
     });
+  } catch (e) { next(e); }
+});
+
+/**
+ * 历史加密订单解密代理（仅 kind=video 且带存量密钥的订单；明文订单继续走 deliver.url 直下）。
+ * Range 支持断点续传：XOR 等长保序，明文偏移 == 密文偏移，区间直接透传上游后按起点解密。
+ */
+orderRouter.get('/:id/file', orderAuth, async (req, res, next) => {
+  try {
+    const o = req.order;
+    if (o.kind === 'package') return res.status(409).json({ error: 'package_order' });
+    if (!o.xor_key_b64 || !o.cdn_url) {
+      return res.status(409).json({ error: 'not_encrypted', message: '该订单为明文直链，直接下载 deliver 返回的 url 即可' });
+    }
+    if (o.status !== 'resolved') {
+      return res.status(409).json({ error: o.status, message: STATUS_MESSAGES[o.status] || o.status });
+    }
+
+    const key = Buffer.from(o.xor_key_b64, 'base64');
+    const encLen = o.enc_len || 131072;
+    const range = req.headers.range; // 原样透传（curl -C - 产生 bytes=a-b）
+    const upstream = await fetch(o.cdn_url, {
+      headers: range ? { Range: range } : {},
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(502).json({ error: 'upstream_error', message: `CDN ${upstream.status}` });
+    }
+
+    res.status(upstream.status);
+    res.set({
+      'content-type': upstream.headers.get('content-type') || 'video/mp4',
+      'accept-ranges': 'bytes',
+      'cache-control': 'no-store',
+    });
+    for (const h of ['content-length', 'content-range']) {
+      const v = upstream.headers.get(h);
+      if (v) res.set(h, v);
+    }
+
+    // Range 起点决定解密偏移（bytes=a-b → a）；无 Range 从 0 开始
+    let start = 0;
+    if (range) {
+      const m = /bytes=(\d+)-/.exec(range);
+      if (m) start = Number(m[1]);
+    }
+    // Node fetch 的 body 是 Web ReadableStream；转 Node 流后过解密 Transform
+    Readable.fromWeb(upstream.body).pipe(xorDecryptStream(key, encLen, start)).pipe(res);
+    // 客户端断开 → 中止上游拉流
+    res.on('close', () => upstream.body?.cancel?.().catch(() => {}));
   } catch (e) { next(e); }
 });

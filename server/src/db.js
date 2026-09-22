@@ -79,16 +79,54 @@ if (!orderColumns.includes('kind')) db.exec("ALTER TABLE orders ADD COLUMN kind 
 if (!orderColumns.includes('package')) db.exec('ALTER TABLE orders ADD COLUMN package TEXT');
 if (!orderColumns.includes('user_token')) db.exec('ALTER TABLE orders ADD COLUMN user_token TEXT');
 db.exec('CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_token)');
+// 托管订单页（/p/:id）：渲染支付码需要 code_url 落库（微信 Native 码随订单终身有效）
+if (!orderColumns.includes('code_url')) db.exec('ALTER TABLE orders ADD COLUMN code_url TEXT');
+// 媒体元数据（mp4 头解析，替代客户端 ffprobe）：时长秒/宽/高
+if (!orderColumns.includes('duration_s')) db.exec('ALTER TABLE orders ADD COLUMN duration_s INTEGER');
+if (!orderColumns.includes('width')) db.exec('ALTER TABLE orders ADD COLUMN width INTEGER');
+if (!orderColumns.includes('height')) db.exec('ALTER TABLE orders ADD COLUMN height INTEGER');
+
+// 批量解析（POST /api/resolve/batch）：任务与逐条明细落盘，进程重启可续跑；
+// cdn_url 属敏感字段（同 orders.cdn_url，只进 sqlite 与属主鉴权的响应）
+db.exec(`
+CREATE TABLE IF NOT EXISTS resolve_batches (
+  id          TEXT PRIMARY KEY,
+  user_token  TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'running',   -- running | done
+  total       INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  finished_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS resolve_batch_items (
+  batch_id  TEXT NOT NULL,
+  idx       INTEGER NOT NULL,                    -- 输入序（稳定展示顺序）
+  url       TEXT NOT NULL,                       -- share_url（解析与计费身份）
+  status    TEXT NOT NULL DEFAULT 'pending',     -- pending|resolving|resolved|failed|refunded|skipped
+  cdn_url   TEXT,
+  title     TEXT,
+  file_size INTEGER,
+  duration_s INTEGER,
+  width     INTEGER,
+  height    INTEGER,
+  charged   INTEGER NOT NULL DEFAULT 0,          -- 本批是否对该条扣过额度（重启恢复时免重扣）
+  usage_log_id INTEGER,                          -- 扣费台账 id（失败返还用）
+  error     TEXT,
+  PRIMARY KEY (batch_id, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_batches_user ON resolve_batches(user_token, created_at);
+`);
 
 const now = () => Math.floor(Date.now() / 1000);
 
 export const orders = {
   create({ id, token, contentId, shareUrl, amountCents, expireAt, previewJson, cdnUrl, fileSize, title,
-           kind = 'video', pkg = null, userToken = null }) {
-    db.prepare(`INSERT INTO orders (id, order_token, content_id, share_url, status, amount_cents, preview_json, cdn_url, file_size, title, created_at, expire_at, kind, package, user_token)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+           kind = 'video', pkg = null, userToken = null, codeUrl = null,
+           durationS = null, width = null, height = null }) {
+    db.prepare(`INSERT INTO orders (id, order_token, content_id, share_url, status, amount_cents, preview_json, cdn_url, file_size, title, created_at, expire_at, kind, package, user_token, code_url, duration_s, width, height)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id, token, contentId, shareUrl ?? null, 'pending', amountCents, previewJson,
-        cdnUrl ?? null, fileSize ?? null, title ?? null, now(), expireAt, kind, pkg, userToken);
+        cdnUrl ?? null, fileSize ?? null, title ?? null, now(), expireAt, kind, pkg, userToken,
+        codeUrl ?? null, durationS ?? null, width ?? null, height ?? null);
   },
   get(id) {
     return db.prepare('SELECT * FROM orders WHERE id=?').get(id);
@@ -119,9 +157,10 @@ export const orders = {
   markResolving(id) {
     db.prepare(`UPDATE orders SET status='resolving' WHERE id=? AND status IN ('paid','resolving')`).run(id);
   },
-  markResolved(id, { cdnUrl, xorKeyB64, encLen, fileSize, title }) {
-    db.prepare(`UPDATE orders SET status='resolved', cdn_url=?, xor_key_b64=?, enc_len=?, file_size=?, title=?, resolved_at=?, error=NULL
-      WHERE id=?`).run(cdnUrl, xorKeyB64, encLen, fileSize, title, now(), id);
+  markResolved(id, { cdnUrl, xorKeyB64, encLen, fileSize, title, durationS, width, height }) {
+    db.prepare(`UPDATE orders SET status='resolved', cdn_url=?, xor_key_b64=?, enc_len=?, file_size=?, title=?, duration_s=?, width=?, height=?, resolved_at=?, error=NULL
+      WHERE id=?`).run(cdnUrl, xorKeyB64, encLen, fileSize, title,
+      durationS ?? null, width ?? null, height ?? null, now(), id);
   },
   markFailed(id, error) {
     db.prepare(`UPDATE orders SET status='failed', error=? WHERE id=?`).run(error, id);
@@ -140,9 +179,9 @@ export const orders = {
     db.prepare(`UPDATE orders SET status='expired' WHERE id=? AND status='pending'`).run(id);
   },
   /** deliver 后刷新过的 url/key（CDN 时效续期） */
-  refreshDelivery(id, { cdnUrl, xorKeyB64, encLen, fileSize }) {
-    db.prepare(`UPDATE orders SET cdn_url=?, xor_key_b64=?, enc_len=?, file_size=?, resolved_at=? WHERE id=?`)
-      .run(cdnUrl, xorKeyB64, encLen, fileSize, now(), id);
+  refreshDelivery(id, { cdnUrl, xorKeyB64, encLen, fileSize, durationS, width, height }) {
+    db.prepare(`UPDATE orders SET cdn_url=?, xor_key_b64=?, enc_len=?, file_size=?, duration_s=COALESCE(?, duration_s), width=COALESCE(?, width), height=COALESCE(?, height), resolved_at=? WHERE id=?`)
+      .run(cdnUrl, xorKeyB64, encLen, fileSize, durationS ?? null, width ?? null, height ?? null, now(), id);
   },
   listByStatus(status) {
     return db.prepare('SELECT * FROM orders WHERE status=?').all(status);
@@ -185,6 +224,9 @@ export const usageLog = {
     return Number(db.prepare(`INSERT INTO usage_log (user_token, kind, target, order_id, created_at) VALUES (?,?,?,?,?)`)
       .run(userToken, kind, target, orderId, now()).lastInsertRowid);
   },
+  get(id) {
+    return db.prepare('SELECT * FROM usage_log WHERE id=?').get(id);
+  },
   markRefunded(id) {
     db.prepare('UPDATE usage_log SET refunded=1 WHERE id=?').run(id);
   },
@@ -193,5 +235,49 @@ export const usageLog = {
   chargedSince(kind, target, userToken, sinceS) {
     return !!db.prepare(`SELECT 1 FROM usage_log WHERE kind=? AND target=? AND user_token=? AND refunded=0 AND created_at>=? LIMIT 1`)
       .get(kind, target, userToken, sinceS);
+  },
+}
+
+export const batches = {
+  create({ id, userToken, urls }) {
+    const ins = db.prepare(`INSERT INTO resolve_batch_items (batch_id, idx, url) VALUES (?,?,?)`);
+    db.transaction(() => {
+      db.prepare(`INSERT INTO resolve_batches (id, user_token, status, total, created_at) VALUES (?,?,?,?,?)`)
+        .run(id, userToken, 'running', urls.length, now());
+      urls.forEach((u, i) => ins.run(id, i, u));
+    })();
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM resolve_batches WHERE id=?').get(id);
+  },
+  items(id) {
+    return db.prepare('SELECT * FROM resolve_batch_items WHERE batch_id=? ORDER BY idx').all(id);
+  },
+  listRunning() {
+    return db.prepare(`SELECT * FROM resolve_batches WHERE status='running'`).all();
+  },
+  item(id, idx) {
+    return db.prepare('SELECT * FROM resolve_batch_items WHERE batch_id=? AND idx=?').get(id, idx);
+  },
+  /** 状态流转守卫：仅当当前状态等于 from 时写入 to（防 runner 并发踩踏），changes>0 即成功 */
+  transitionItem(id, idx, from, to, patch = {}) {
+    const sets = ['status=?'];
+    const args = [to];
+    for (const [k, v] of Object.entries(patch)) { sets.push(`${k}=?`); args.push(v ?? null); }
+    args.push(id, idx, from);
+    return db.prepare(`UPDATE resolve_batch_items SET ${sets.join(',')} WHERE batch_id=? AND idx=? AND status=?`)
+      .run(...args).changes > 0;
+  },
+  /** 额度耗尽：余下所有 pending 直落 skipped（整批不再逐条撞 402） */
+  skipPending(id, error) {
+    db.prepare(`UPDATE resolve_batch_items SET status='skipped', error=? WHERE batch_id=? AND status='pending'`).run(error, id);
+  },
+  finishIfSettled(id) {
+    const left = db.prepare(`SELECT COUNT(*) AS n FROM resolve_batch_items WHERE batch_id=? AND status IN ('pending','resolving')`).get(id).n;
+    if (left === 0) {
+      db.prepare(`UPDATE resolve_batches SET status='done', finished_at=? WHERE id=? AND status='running'`).run(now(), id);
+      return true;
+    }
+    return false;
   },
 };

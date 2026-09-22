@@ -13,3 +13,10 @@ export function newOrderToken() {
 }
 
 export const refundNoFor = (orderId) => `rf_${orderId}`.slice(0, 64);
+
+/** 批量解析任务 id：可读前缀 + 时间戳 + 随机段（无微信侧长度约束） */
+export function newBatchId() {
+  const ts = Date.now().toString(36);
+  const rand = crypto.randomBytes(6).toString('hex');
+  return `bat_${ts}_${rand}`;
+}

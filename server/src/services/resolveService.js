@@ -1,5 +1,6 @@
 import { orders } from '../db.js';
 import { resolveVideo, ResolverFatalError } from '../sph/resolverClient.js';
+import { probeMp4Meta } from '../sph/mp4meta.js';
 import { refundOrder } from './wxpay.js';
 import { refundNoFor } from '../util/id.js';
 import { config } from '../config.js';
@@ -37,6 +38,9 @@ export async function resolve(orderId) {
         encLen: order.enc_len || 0,
         fileSize: order.file_size,
         title: order.title,
+        durationS: order.duration_s,
+        width: order.width,
+        height: order.height,
       });
       console.log(`[resolve] ${orderId} OK 预解析命中 (${order.file_size}B)`);
       return;
@@ -63,7 +67,8 @@ export async function resolve(orderId) {
   }
 }
 
-/** 解析并 HEAD 校准（不落库；deliver 刷新 CDN 时效时复用）。明文直链：无 XOR、无 x-enclen。 */
+/** 解析并 HEAD 校准 + mp4 头探测元数据（不落库；deliver 刷新 CDN 时效时复用）。
+ *  明文直链：无 XOR、无 x-enclen。元数据探测失败不阻断（返回 null 字段）。 */
 export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } = {}) {
   const { cdnUrl, title, author } = await resolveVideo(shareUrl, { forceRefresh, timeoutMs });
 
@@ -72,6 +77,9 @@ export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } 
   if (!head.ok) throw new Error(`CDN HEAD ${head.status}`);
   const fileSize = Number(head.headers.get('content-length')) || 0;
 
+  // 时长/分辨率：moov 头自解析（上游载荷无这些字段，实测 2026-09-22）
+  const meta = await probeMp4Meta(cdnUrl, { timeoutMs: config.sph.requestTimeoutMs });
+
   return {
     cdnUrl,
     xorKeyB64: '',
@@ -79,6 +87,9 @@ export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } 
     fileSize,
     title: title || 'sph_video',
     author: author || '', // 达人昵称：/api/resolve 出参用（skill 6.5 同达人追问）；markResolved 解构不取、自然忽略
+    durationS: meta.durationS,
+    width: meta.width,
+    height: meta.height,
   };
 }
 

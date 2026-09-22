@@ -7,6 +7,8 @@ const bool = (v, d = false) => (v === undefined || v === '' ? d : ['1', 'true', 
 export const config = {
   port: num(process.env.PORT, 8787),
   dbPath: process.env.DB_PATH || './data/orders.db',
+  // 公网基址（拼托管订单页 page_url 用；本地开发可指 http://localhost:8787）
+  publicBase: (process.env.PUBLIC_BASE_URL || 'https://sph.yes-tek.com').replace(/\/+$/, ''),
   priceCents: num(process.env.PRICE_CENTS, 100), // 单视频按次 ¥1/条（skill 渠道）
   orderTtlSeconds: num(process.env.ORDER_TTL_SECONDS, 900),
   adminToken: process.env.ADMIN_TOKEN || '',

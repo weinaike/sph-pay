@@ -12,7 +12,9 @@ import { resolveRouter } from './routes/resolve.js';
 import { devRouter } from './routes/dev.js';
 import { wxqrRouter } from './routes/wxqr.js';
 import { authRouter, securityRouter } from './routes/security.js';
+import { pageRouter } from './routes/page.js';
 import { resolve } from './services/resolveService.js';
+import { resumeInterruptedBatches } from './services/batchService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
 import { refundNoFor } from './util/id.js';
 
@@ -24,7 +26,7 @@ app.disable('x-powered-by');
 
 // 微信回调路由之前必须用 raw body（JSON 解析会破坏验签）
 app.use('/api/wxpay', express.raw({ type: '*/*', limit: '1mb' }), wxpayRouter);
-app.use('/api', express.json({ limit: '64kb' }));
+app.use(['/api', '/p'], express.json({ limit: '64kb' })); // /p 的 POST /:id/package 页面直购也需要 JSON
 
 app.get('/healthz', (req, res) => res.json({ ok: true, price_cents: config.priceCents }));
 app.use('/api/order', orderCreateRouter, orderRouter); // POST / = 创建订单；/:id/* = 查询/取货
@@ -32,10 +34,15 @@ app.use('/api/wxqr', wxqrRouter); // GET /?t= 微信登录二维码回源（钉�
 app.use('/api/user', userRouter); // POST / = 匿名开户；GET /me = 余额/已购
 app.use('/api/package', packageRouter); // POST / = 购买资源包（kind='package' 订单）
 app.use('/api/finder', finderRouter); // POST /search 达人检索；POST /videos 作品列表（免费10/百条扣机会）
-app.use('/api/resolve', resolveRouter); // POST / = 额度直链（扣1条/24h免重扣/失败返还）
+app.use('/api/resolve', resolveRouter); // POST / = 额度直链（扣1条/24h免重扣/失败返还）；POST /batch = 批量解析
+app.use('/p', pageRouter); // 托管订单页（skill 只发 page_url；同源轮询状态自推进，/:id/cover /:id/avatar 图像代理）
 if (config.mockPay) app.use('/api/dev', devRouter); // 模拟支付（仅本地联调）
 app.use('/api/auth', authRouter); // POST /login：wx.login code 换 skey（内容安全用）
 app.use('/api/security', securityRouter); // 内容安全检测 + 微信消息推送回调
+
+// ---- 启动恢复：上次进程中断的批量解析任务续跑（charged=1 的条目免重扣重解析） ----
+const resumedBatches = resumeInterruptedBatches();
+if (resumedBatches) console.log(`[batch] 启动恢复 ${resumedBatches} 个中断批次`);
 
 // ---- sweeper：60s 一轮 ----
 setInterval(async () => {

@@ -37,20 +37,26 @@ docker compose logs -f                     # healthcheck 通过即就绪
 ## 架构
 
 ```
-skill(客户端编排) ── preview/轮询/deliver ──► server(Express :8787)
+skill(客户端编排，纯 curl + 2 个 stdlib 脚本) ── 下单/轮询/deliver ──► server(Express :8787)
                                               ├─ previewService → 微信免登录 get_feed_info（预览元数据）
                                               ├─ wxpay(APIv3 Native) → 下单/回调验签(AES-GCM)/退款
                                               ├─ resolveService → sph/resolverClient → sph.yes-tek.com
                                               │   POST /api/scraper/fetch → 轮询 /api/scraper/job → 明文直链落库
+                                              │   + sph/mp4meta（Range 拉 moov 解析时长/分辨率，替代客户端 ffprobe）
+                                              ├─ routes/page.js → /p/:id 托管订单页（2026-09-22 上云：
+                                              │   QR/信息/倒计时/套餐价目全服务端渲染，同源轮询 status 自推进，
+                                              │   cover/avatar 防盗链代理；skill 只把 page_url 给用户）
+                                              ├─ batchService → /api/resolve/batch 批量解析（落盘续跑，
+                                              │   逐条扣减/失败返还/额度耗尽整批 skip；替代客户端节拍脚本）
                                               └─ sweeper(60s)：pending 查单对账（回调丢失兜底）/过期关单/卡单重试/退款重试
-客户端下载：直连腾讯 CDN（明文 MP4；历史加密订单前 131072 字节 XOR 解密）
+客户端下载：直连腾讯 CDN（明文 MP4；历史加密订单走 /api/order/:id/file 流式解密代理，不再有 decrypt.py）
 ```
 
 订单状态机：`pending → paid → resolving → resolved`；分支：`pending→expired`（15min 未付+关单）、`解析 3 次重试全败→failed→自动全额退款→refunded`。幂等靠 `UPDATE ... WHERE status='pending'`。
 
 **双渠道计费**（plan 见 `docs/plan-dual-channel-pricing.md`）：orders 表 `kind` 列区分 `video`（¥1 单视频）与 `package`（资源包 A/B/C，支付落账 `markPaidAndApply` 同事务入账 users 余额直落 `credited`，售出不退）；匿名账户 `users`（`X-User-Token`）挂直链额度/百条检索机会两种余额（永久有效，原子扣减防并发超扣），消费/去重台账在 `usage_log`。小程序渠道不经 sph-pay（直连 sph-api fetch/job，nginx 限频 5r/m）。
 
-**核心安全不变量**：`cdn_url`/`xor_key_b64` 只存在于 sqlite（`server/data/orders.db`，含密钥属敏感文件）和 deliver 响应中。preview/status 的响应必须过 zod 白名单序列化（`routes/preview.js`），新增字段需显式改 schema。支付前零下发。
+**核心安全不变量**：`cdn_url`/`xor_key_b64` 只存在于 sqlite（`server/data/orders.db`，含密钥属敏感文件）和 deliver 响应中。preview/status 的响应必须过 zod 白名单序列化（`routes/orderCreate.js`），新增字段需显式改 schema。支付前零下发；托管页 `/p/:id` 同理（绝不出现直链/密钥）。
 
 ### src/sph/ —— 解析隔离层
 
