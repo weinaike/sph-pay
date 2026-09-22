@@ -7,8 +7,8 @@
 ## 0. 钱包（匿名账户）
 
 ```bash
-"$PY" "$SKILL_DIR/scripts/wallet.py" ensure   # 首次匿名开户；token 落 ~/.config/sph/user_token (0600)
-"$PY" "$SKILL_DIR/scripts/wallet.py" me       # 余额：link_quota(直链条数) / search_credits(百条机会) / 已购
+python3 "$SKILL_DIR/scripts/wallet.py" ensure   # 首次匿名开户；token 落 ~/.config/sph/user_token (0600)
+python3 "$SKILL_DIR/scripts/wallet.py" me       # 余额：link_quota(直链条数) / search_credits(百条机会) / 已购
 ```
 
 - token **全局唯一**（跟人不跟项目目录），开户后**必提醒用户备份 `~/.config/sph/user_token`**——匿名凭证，丢失即丢余额。
@@ -41,51 +41,67 @@ curl -sS -X POST "https://sph.yes-tek.com/api/finder/videos" \
 
 → `{items:[{object_id,title,share_url,created_at,duration,width,height,size}], total, charged, ...}`
 
-- 默认返回前 10 条（含 `share_url` 短链），**免费不限次**——先展示这 10 条再问要不要百条，不要上来就 full。
-- full 首次较慢（服务端翻页+生成短链，约 10~60s），**必须先告知用户将消耗 1 次百条机会（余额 `wallet.py me`）**，确认后再发。
-- 402 `no_search_credits` → 百条机会不足，引导购 B/C（见第 4 节）；`total ≤ 100` 时列表就是全部作品。
+- 默认前 10 条**免费不限次**——先展示这 10 条再问要不要百条，不要上来就 full。
+- full 首次较慢（服务端翻页+生成短链，约 10~60s），**必须先告知将消耗 1 次百条机会（余额 `wallet.py me`）**，确认后再发。
+- 402 `no_search_credits` → 百条机会不足，引导购 B/C（第 5 节）；`total ≤ 100` 时列表就是全部作品。
 
-## 3. 批量转直链（batch_resolve.py）
+## 3. 批量转直链（服务端批处理 · POST /api/resolve/batch）
 
-用户选定要下载的条目后，把 `share_url` 写入文件（每行一条），交给脚本：
+用户选定要下载的条目后，把 `share_url` 数组一次提交（≤100 条，自动去重；**任一非短链整批 400，提交前自查一遍**）：
 
 ```bash
-printf '%s\n' <短链1> <短链2> ... > ./sph-downloads/urls.txt
-"$PY" "$SKILL_DIR/scripts/batch_resolve.py" ./sph-downloads/urls.txt
-# 中断续跑：--skip <上次结果文件>（脚本最后会打印路径）
+curl -sS -X POST "https://sph.yes-tek.com/api/resolve/batch" -H 'content-type: application/json' \
+  -H "x-user-token: <token>" \
+  -d '{"urls":["<短链1>","<短链2>",...]}'          # → {batch_id, total, ...}
+python3 "$SKILL_DIR/scripts/poll.py" --batch <batch_id>   # 轮询到 done，结果落 ./sph-downloads/batch-<batch_id>.json
 ```
 
-- 逐条扣直链额度；**单条解析失败自动返还该条额度并继续**；402 中断并汇报（退出码 2）。
-- 结果文件含每条 `{url, title, file_size}`——**下载动作**逐条 `curl -sSL -C - --retry 3 -o "./sph-downloads/<净化标题>.mp4" "<url>"`（同 SKILL.md 第 5 步规则；直链不进对话，本地文件才是交付物）。量大会话过长时，可用结果文件分批处理。
+- **动手前先报余额**（要转 N 条 ≥ N 条直链额度）。
+- 服务端逐条扣额度、**单条失败自动返还并继续**、额度不足余条 `skipped`；进程重启自动续跑（已扣费不重扣）。
+- 轮询超时（30min）不是失败：同命令重查即可续取进度。
+- 会话过长可分批：每批 ≤100 条，批与批之间独立计费（同短链 24h 免重扣兜底重复）。
 
-## 4. 额度不足与套餐购买（402 应对）
+## 4. 下载与交付
+
+结果文件 `./sph-downloads/batch-<id>.json` 里 `items[].cdn_url`（仅 resolved 条目）逐条下载（**直链不进对话，本地文件才是交付物**）：
+
+```bash
+curl -sSL -C - --retry 3 -o "./sph-downloads/<净化标题>.mp4" "<cdn_url>"
+```
+
+- 逐条时长/体积/分辨率就在结果文件里（`duration_s`/`file_size`/`width`/`height`，可能 null 需兜底），汇报不需要 ffprobe。
+- 量大放后台跑、逐条汇报绝对路径；中断用 `curl -C -` 续传。
+
+## 5. 额度不足 / 主动购买（402 应对）
 
 价目、各档额度与权益**只有一个事实源**，报价前先取数：
 
 ```bash
-"$PY" "$SKILL_DIR/scripts/render_order.py" --dump-packages   # JSON：mp_name + packages（价格/单条折算/权益条目）
+curl -sS https://sph.yes-tek.com/api/package    # → {price_cents, notice, packages:{A:{amount_cents,link_quota,search_credits},...}}
 ```
 
-向用户报价、推荐、写套餐卡都用这份输出，**不凭记忆写价格**。推荐档位按**待转条数**取最小满足档（额度 ≈10 条→A；≈100 条→B；更多/常用→C）。
-
-**购买前必达三条**（引导付费时明确告知）：**虚拟权益支付后即时到账 · 售出不退 · 余额永久有效**。
+向用户报价、推荐都用这份输出，**不凭记忆写价格**。推荐档位按**待转条数**取最小满足档（额度 ≈10 条→A；≈100 条→B；更多/常用→C）。**购买前必达三条**：**虚拟权益支付后即时到账 · 售出不退 · 余额永久有效**。
 
 ```bash
-"$PY" "$SKILL_DIR/scripts/wallet.py" buy B                       # → {order_id, order_token, code_url, ...}
-"$PY" "$SKILL_DIR/scripts/qr.py" "<code_url>" --invert    # B 轨·纯终端；有桌面则渲套餐页（SKILL.md 第 9 节第 5 步）
-"$PY" "$SKILL_DIR/scripts/poll.py" --order <order_id> --token <order_token> --terminal credited
-"$PY" "$SKILL_DIR/scripts/wallet.py" me                           # 确认到账后继续批量
+python3 "$SKILL_DIR/scripts/wallet.py" buy B > ./package_order.json   # → {order_id, order_token, page_url, expire_at, granted, notice}
 ```
 
-不想付费的免费口径：单条视频 → 小程序《越思工具》免费下载（同 SKILL.md 第 7 节）；达人前 10 条短链本身免费。
+**支付页 = 响应里的 `page_url`**（套餐订单自己的页面，绝不复用单视频订单的支付页；原单视频订单不付自动过期，无需处理）。把链接给用户——手机微信内打开可**点按直接支付**，电脑打开扫码；对话侧只留 3 行（¥X · 剩余时间 · 打开链接支付）。然后：
 
-## 5. 单视频 + 有额度：免支付直取
+```bash
+python3 "$SKILL_DIR/scripts/poll.py" --order <order_id> --token <order_token> --terminal credited
+python3 "$SKILL_DIR/scripts/wallet.py" me                           # 确认到账后继续批量
+```
 
-钱包存在且 `link_quota > 0` 时，单条视频不必走按次付费的订单流（SKILL.md 第 2~4 步），直接：
+不想付费的免费口径：单条视频 → 小程序《越思工具》免费下载（同 SKILL.md 免费路径引导）；达人前 10 条短链本身免费。
+
+## 6. 单视频 + 有额度：免支付直取
+
+钱包存在且 `link_quota > 0` 时，单条视频不必走按次付费的订单流（SKILL.md 第 3~5 步），直接：
 
 ```bash
 curl -sS -X POST "https://sph.yes-tek.com/api/resolve" \
   -H 'content-type: application/json' -H "x-user-token: <token>" -d '{"url":"<短链>"}'
 ```
 
-→ `{url, file_size, title, author, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同第 5/6 步，交付后追问同达人其他作品见 SKILL.md 6.5 节（响应自带 `author` 达人昵称，空串才问用户）。无钱包/无额度 → 走原订单流。
+→ `{url, file_size, title, author, duration_s, width, height, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同 SKILL.md 第 6/7 步，交付后追问同达人其他作品见 SKILL.md 第 8 节（响应自带 `author` 达人昵称，空串才问用户）。无钱包/无额度 → 走原订单流。
