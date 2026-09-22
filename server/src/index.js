@@ -13,12 +13,24 @@ import { devRouter } from './routes/dev.js';
 import { wxqrRouter } from './routes/wxqr.js';
 import { authRouter, securityRouter } from './routes/security.js';
 import { pageRouter } from './routes/page.js';
+import { a2mRouter } from './routes/a2m.js';
+import { A2MConfigError, loadAlipayConfig } from './a2m/config.js';
+import { sweepExpiredArtifacts } from './a2m/artifacts.js';
 import { resolve } from './services/resolveService.js';
 import { resumeInterruptedBatches } from './services/batchService.js';
 import { closeOrder, queryOrder, refundOrder } from './services/wxpay.js';
 import { refundNoFor } from './util/id.js';
 
 validateConfig();
+
+// A2M（支付宝按量付费）为增量能力：未配置只降级 /api/a2m/*（503），不影响微信主链路
+try {
+  const a2mCfg = loadAlipayConfig();
+  console.log(`[a2m] 支付宝按量付费就绪（${a2mCfg.sandbox ? '沙箱' : '生产'}，appId=${a2mCfg.appId}）`);
+} catch (e) {
+  if (e instanceof A2MConfigError) console.warn(`[a2m] 未配置：${e.message}（/api/a2m/* 返回 503）`);
+  else throw e;
+}
 
 const app = express();
 app.set('trust proxy', true); // nginx 后面取真实 IP
@@ -35,6 +47,7 @@ app.use('/api/user', userRouter); // POST / = 匿名开户；GET /me = 余额/�
 app.use('/api/package', packageRouter); // POST / = 购买资源包（kind='package' 订单）
 app.use('/api/finder', finderRouter); // POST /search 达人检索；POST /videos 作品列表（免费10/百条扣机会）
 app.use('/api/resolve', resolveRouter); // POST / = 额度直链（扣1条/24h免重扣/失败返还）；POST /batch = 批量解析
+app.use('/api/a2m', a2mRouter); // AI 按量付费（支付宝）：GET /resolve 402/Payment-Proof 资源端点
 app.use('/p', pageRouter); // 托管订单页（skill 只发 page_url；同源轮询状态自推进，/:id/cover /:id/avatar 图像代理）
 if (config.mockPay) app.use('/api/dev', devRouter); // 模拟支付（仅本地联调）
 app.use('/api/auth', authRouter); // POST /login：wx.login code 换 skey（内容安全用）
@@ -78,6 +91,8 @@ setInterval(async () => {
         if (r.status === 200) orders.markRefunded(o.id, refundNoFor(o.id));
       } catch { /* 下轮再试 */ }
     }
+    // 4) A2M 产物 TTL 清扫（音频/文字稿过期删除，状态置 expired 不重跑）
+    sweepExpiredArtifacts();
   } catch (e) {
     console.error('[sweeper] 异常:', e.message);
   }

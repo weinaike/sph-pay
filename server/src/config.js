@@ -11,6 +11,24 @@ export const config = {
   publicBase: (process.env.PUBLIC_BASE_URL || 'https://sph.yes-tek.com').replace(/\/+$/, ''),
   priceCents: num(process.env.PRICE_CENTS, 100), // 单视频按次 ¥1/条（skill 渠道）
   orderTtlSeconds: num(process.env.ORDER_TTL_SECONDS, 900),
+  // AI 按量付费（A2M，支付宝 /api/a2m/*）：单资源价格与支付窗口
+  a2m: {
+    priceCents: num(process.env.A2M_PRICE_CENTS, num(process.env.PRICE_CENTS, 100)),
+    payBeforeSeconds: num(process.env.A2M_PAY_BEFORE_SECONDS, 900),
+    precheckTimeoutMs: 30_000, // 出账单前真实解析预检超时（与 /api/order 预检一致）
+    maxDurationS: num(process.env.A2M_MAX_DURATION_S, 7200),     // 超 2h 拒出账单（防 ASR 成本倒挂）
+    artifactTtlHours: num(process.env.A2M_ARTIFACT_TTL_HOURS, 48), // 音频/文字稿产物保留时长（过期清扫）
+  },
+  // 火山豆包「单向流式语音识别」ASR（A2M ¥1 打包交付的文字提取）
+  asr: {
+    apiKey: process.env.ARK_API_KEY || '', // X-Api-Key（火山控制台 API Key 管理；缺失 → transcript skipped）
+    resourceId: process.env.ASR_RESOURCE_ID || 'volc.seedasr.sauc.duration', // 豆包 2.0 小时版；1.0=volc.bigasr.sauc.duration
+    endpoint: process.env.ASR_ENDPOINT || 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream',
+    ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+    chunkBytes: num(process.env.ASR_CHUNK_BYTES, 6400),     // 200ms@16k mono s16le
+    chunkIntervalMs: num(process.env.ASR_CHUNK_INTERVAL_MS, 0), // 0=不限速（nostream 面向非实时；被断开时再调）
+    timeoutMs: num(process.env.ASR_TIMEOUT_MS, 300_000),
+  },
   adminToken: process.env.ADMIN_TOKEN || '',
   mockPay: bool(process.env.MOCK_PAY), // 1=模拟支付（本地联调，挂载 /api/dev/*）
   // 资源包（plan-dual-channel-pricing §0）：直链额度永久有效；B/C 赠百条检索机会

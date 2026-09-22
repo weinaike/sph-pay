@@ -20,3 +20,10 @@ export function newBatchId() {
   const rand = crypto.randomBytes(6).toString('hex');
   return `bat_${ts}_${rand}`;
 }
+
+/** AI 按量付费（A2M）商户订单号（支付宝 out_trade_no，上限 64 字符） */
+export function newA2mTradeNo() {
+  const ts = Date.now().toString(36);
+  const rand = crypto.randomBytes(10).toString('hex');
+  return `a2m_${ts}_${rand}`; // 4+11+1+20 = 36
+}

@@ -116,6 +116,45 @@ CREATE TABLE IF NOT EXISTS resolve_batch_items (
 CREATE INDEX IF NOT EXISTS idx_batches_user ON resolve_batches(user_token, created_at);
 `);
 
+// AI 按量付费（A2M，支付宝）：402 账单订单与幂等履约状态机
+// PENDING_PAYMENT →（验付成功 bindTrade）PAID →（交付物落位 prepareDeliverable）PENDING_CONFIRM
+// →（履约确认成功 markFulfilled）FULFILLED；未付过期懒转 EXPIRED（已进入确认/完成态永不过期）
+// trade_no 全表 UNIQUE：同一平台交易号只允许履约一次（防重复履约）；deliverable 含 cdn_url
+// 等敏感字段，与 orders.cdn_url 同边界：只进 sqlite 与属主交付响应
+db.exec(`
+CREATE TABLE IF NOT EXISTS a2m_orders (
+  out_trade_no   TEXT PRIMARY KEY,
+  resource_id    TEXT NOT NULL,             -- 资源标识（/api/a2m/resolve?url=<share_url>，规范短链）
+  share_url      TEXT NOT NULL,             -- 解析身份（weixin.qq.com/sph/<短码>）
+  goods_name     TEXT NOT NULL,
+  amount         TEXT NOT NULL,             -- 元字符串（"1.00"，与账单/验付严格相等比较）
+  currency       TEXT NOT NULL DEFAULT 'CNY',
+  pay_before     TEXT NOT NULL,             -- 账单原文 ISO8601 带时区
+  pay_before_at  INTEGER NOT NULL,          -- epoch 秒（本地过期判断，与 pay_before 同源生成）
+  status         TEXT NOT NULL DEFAULT 'PENDING_PAYMENT',
+  trade_no       TEXT UNIQUE,
+  deliverable    TEXT,                      -- 预解析交付物 JSON（支付前已证明可获取）
+  created_at     INTEGER NOT NULL,
+  paid_at        INTEGER,
+  fulfilled_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_a2m_status ON a2m_orders(status);
+`);
+
+// A2M 履约后置产物（音频提取/ASR 文字稿）：一次付费打包交付，流水线异步跑，
+// 客户端用同一 Payment-Proof 重调 deliver 轮询本表状态；产物文件在
+// data/a2m-artifacts/<out_trade_no>/（token 是产物下载凭证，只随已验付交付响应下发）
+db.exec(`
+CREATE TABLE IF NOT EXISTS a2m_artifacts (
+  out_trade_no TEXT PRIMARY KEY,
+  token        TEXT NOT NULL,                    -- 产物下载凭证（随机，/api/a2m/artifact?token=）
+  audio_status TEXT NOT NULL DEFAULT 'pending',  -- pending|processing|ready|failed|skipped|expired
+  asr_status   TEXT NOT NULL DEFAULT 'pending',  -- 同上（ARK_API_KEY 缺失 → skipped）
+  error        TEXT,
+  updated_at   INTEGER NOT NULL
+);
+`);
+
 const now = () => Math.floor(Date.now() / 1000);
 
 export const orders = {
@@ -279,5 +318,83 @@ export const batches = {
       return true;
     }
     return false;
+  },
+};
+
+export const a2mOrders = {
+  /** 出账单时创建待付订单（交付物为支付前预解析结果，可获取性已证明） */
+  createPending({ outTradeNo, resourceId, shareUrl, goodsName, amount, currency, payBefore, payBeforeAt, deliverable }) {
+    db.prepare(`INSERT INTO a2m_orders (out_trade_no, resource_id, share_url, goods_name, amount, currency, pay_before, pay_before_at, status, deliverable, created_at)
+      VALUES (?,?,?,?,?,?,?,?, 'PENDING_PAYMENT', ?, ?)`)
+      .run(outTradeNo, resourceId, shareUrl, goodsName, amount, currency, payBefore, payBeforeAt,
+        deliverable ? JSON.stringify(deliverable) : null, now());
+  },
+  /** 读取（含懒过期：仅未付单按 pay_before 过期；已进入确认/完成态永不回收） */
+  get(outTradeNo) {
+    const o = db.prepare('SELECT * FROM a2m_orders WHERE out_trade_no=?').get(outTradeNo);
+    if (o && o.status === 'PENDING_PAYMENT' && o.pay_before_at <= now()) {
+      db.prepare(`UPDATE a2m_orders SET status='EXPIRED' WHERE out_trade_no=? AND status='PENDING_PAYMENT'`).run(outTradeNo);
+      return { ...o, status: 'EXPIRED' };
+    }
+    return o;
+  },
+  getByTradeNo(tradeNo) {
+    return db.prepare('SELECT * FROM a2m_orders WHERE trade_no=?').get(tradeNo);
+  },
+  /** 验付成功后绑定平台交易号并落 PAID（幂等）。
+   *  返回 'bound' | 'idempotent' | 'trade_mismatch' | 'trade_reused' | 'unpayable' */
+  bindTrade(outTradeNo, tradeNo) {
+    const o = this.get(outTradeNo);
+    if (!o) return 'unpayable';
+    if (o.trade_no) return o.trade_no === tradeNo ? 'idempotent' : 'trade_mismatch';
+    if (o.status !== 'PENDING_PAYMENT') return 'unpayable';
+    try {
+      const r = db.prepare(`UPDATE a2m_orders SET status='PAID', trade_no=?, paid_at=? WHERE out_trade_no=? AND status='PENDING_PAYMENT'`)
+        .run(tradeNo, now(), outTradeNo);
+      return r.changes > 0 ? 'bound' : 'unpayable';
+    } catch (e) {
+      if (String(e.code || '').startsWith('SQLITE_CONSTRAINT')) return 'trade_reused'; // trade_no 已被其他订单履约
+      throw e;
+    }
+  },
+  /** 交付物落位 → PENDING_CONFIRM（幂等；不触碰 FULFILLED——已完成订单走回放分支，不重复确认） */
+  prepareDeliverable(outTradeNo) {
+    db.prepare(`UPDATE a2m_orders SET status='PENDING_CONFIRM' WHERE out_trade_no=? AND status IN ('PAID','PENDING_CONFIRM')`)
+      .run(outTradeNo);
+    return db.prepare('SELECT * FROM a2m_orders WHERE out_trade_no=?').get(outTradeNo);
+  },
+  /** 履约确认成功 → FULFILLED（幂等） */
+  markFulfilled(outTradeNo) {
+    db.prepare(`UPDATE a2m_orders SET status='FULFILLED', fulfilled_at=? WHERE out_trade_no=? AND status IN ('PENDING_CONFIRM','FULFILLED')`)
+      .run(now(), outTradeNo);
+  },
+  listByStatus(status) {
+    return db.prepare('SELECT * FROM a2m_orders WHERE status=?').all(status);
+  },
+};
+
+export const a2mArtifacts = {
+  /** 建行（幂等：已存在返回既有行，token 不变——轮询/重放共用同一凭证） */
+  ensure(outTradeNo, token) {
+    db.prepare(`INSERT INTO a2m_artifacts (out_trade_no, token, audio_status, asr_status, updated_at)
+      VALUES (?,?, 'pending', 'pending', ?)
+      ON CONFLICT(out_trade_no) DO NOTHING`).run(outTradeNo, token, now());
+    return db.prepare('SELECT * FROM a2m_artifacts WHERE out_trade_no=?').get(outTradeNo);
+  },
+  get(outTradeNo) {
+    return db.prepare('SELECT * FROM a2m_artifacts WHERE out_trade_no=?').get(outTradeNo);
+  },
+  /** 分段落状态（音频/ASR 各自独立推进，互不覆盖） */
+  setStatus(outTradeNo, { audioStatus = null, asrStatus = null, error = undefined }) {
+    const sets = ['updated_at=?'];
+    const args = [now()];
+    if (audioStatus) { sets.push('audio_status=?'); args.push(audioStatus); }
+    if (asrStatus) { sets.push('asr_status=?'); args.push(asrStatus); }
+    if (error !== undefined) { sets.push('error=?'); args.push(error); }
+    args.push(outTradeNo);
+    db.prepare(`UPDATE a2m_artifacts SET ${sets.join(',')} WHERE out_trade_no=?`).run(...args);
+  },
+  listActive() {
+    return db.prepare(`SELECT * FROM a2m_artifacts WHERE audio_status IN ('pending','processing') OR asr_status IN ('pending','processing')`).all();
   },
 };

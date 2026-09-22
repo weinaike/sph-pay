@@ -28,8 +28,8 @@ services:
     volumes:
       - sph-data:/app/data           # sqlite 订单库（含密钥，勿丢失）
       - ./certs:/app/certs:ro        # 微信商户私钥 + 微信支付公钥
-    mem_limit: 512m                  # 纯 Node 进程，无浏览器
-    cpus: 1
+    mem_limit: 1g                    # Node + ffmpeg（音频提取/ASR 转码）+ 产物落盘
+    cpus: 2
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

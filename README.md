@@ -78,6 +78,8 @@ pip install --user qrcode pillow -i https://mirrors.aliyun.com/pypi/simple/
 | POST | `/api/finder/search` | `{keyword}` → 达人 Top10（免费匿名，10 次/min/IP） |
 | POST | `/api/finder/videos` | `{username}` → 前 10 条短链列表（免费匿名）；`{username, full:true}` + `X-User-Token` → 前 100 条（扣 1 次百条机会，同达人 24h 缓存代内免重扣；总数 ≤10 自动免扣；可用交付 <10 条全额返还） |
 | POST | `/api/resolve` | `X-User-Token` + `{url}` → 短链转直链，扣 1 条直链额度（同短链 24h 免重扣；解析失败自动返还；不足 402） |
+| GET | `/api/a2m/resolve?url=` | **AI 按量付费（支付宝 A2M/402 协议）**资源端点：无 `Payment-Proof` Header → 402 + `Payment-Needed`（Base64URL 账单，商家 RSA2 签名，不含直链）；带 Proof → 平台验付（active/金额/单号/资源一致/trade_no 防重复履约）→ 幂等履约确认 → 交付 `{content:{cdn_url, audio, transcript,...}}` + `Payment-Validation`。**¥1 打包交付**：视频直链（即时）+ 音频 M4A + ASR 文字稿 TXT/SRT（异步流水线 `a2m/artifacts.js`，同 Proof 重调本端点轮询；超 2h 视频拒出账单）。支付前真实解析预检；沙箱（`server/.alipay-sandbox.json`）固定 `api_mock_service_id` ¥0.01，生产 env `ALIPAY_*` 全齐启用（见 `.env.example`）。客户端流程见 `skill/sph-video-alipay-a2m/` |
+| GET | `/api/a2m/artifact/:outTradeNo/:kind?token=` | A2M 产物下载（audio.m4a / transcript.txt / .srt / .json；token 只随已验付交付响应下发，60 次/min/IP；产物 TTL 默认 48h 过期清扫）。ASR 走火山豆包单向流式识别（`a2m/volcAsr.js`，`ARK_API_KEY` 缺失时文字稿优雅 skipped） |
 | GET | `/api/order/:id/status?token=` | 轮询订单状态（套餐单终态 `credited`） |
 | GET | `/api/order/:id/deliver?token=` | **已支付才返回** `{url, key_b64, enc_len, file_size, title}`（套餐单 409） |
 | POST | `/api/wxpay/notify` | 微信支付回调（raw body 验签） |
@@ -97,6 +99,9 @@ pip install --user qrcode pillow -i https://mirrors.aliyun.com/pypi/simple/
 | `PRICE_CENTS` / `ORDER_TTL_SECONDS` | 单价（分）/ 未付过期秒数 |
 | `SPH_BASE` | 自有解析服务地址（默认 `https://sph.yes-tek.com`） |
 | `SPH_REQUEST_TIMEOUT_MS` / `SPH_POLL_INTERVAL_MS` / `SPH_RESOLVE_TIMEOUT_MS` | 解析单请求超时 / 轮询间隔 / 总超时（默认 10s / 1.5s / 90s） |
+| `ARK_API_KEY` | 火山引擎 API Key（豆包单向流式 ASR 文字提取；缺失 → 文字稿 skipped，不影响视频/音频） |
+| `ASR_RESOURCE_ID` / `ASR_ENDPOINT` / `ASR_CHUNK_INTERVAL_MS` | ASR 模型版本（默认 `volc.seedasr.sauc.duration` 2.0 小时版）/ 端点 / 分片发送间隔（默认 0=不限速） |
+| `A2M_MAX_DURATION_S` / `A2M_ARTIFACT_TTL_HOURS` | A2M 视频时长上限（默认 7200s 拒出账单）/ 产物保留时长（默认 48h） |
 | `MOCK_PAY` | 1=模拟支付（挂载 `/api/dev/*`），生产必须 0 |
 
 ## 测试与验证
@@ -104,6 +109,7 @@ pip install --user qrcode pillow -i https://mirrors.aliyun.com/pypi/simple/
 ```bash
 cd server && npm test                          # 单元测试
 node test/manual-resolve.js '<视频号链接>'       # 风险前置：自有解析服务全链路
+node test/manual-asr.js                        # 火山 ASR 真连通（say 合成语音 → 转写断言）
 ```
 
 已验证路径：MOCK 全状态机（含失败→自动退款）、真实链接解析、CDN 明文直链下载（`ftyp` 校验 + ffprobe）、Docker 容器重启订单持久化。
@@ -117,9 +123,13 @@ node test/manual-resolve.js '<视频号链接>'       # 风险前置：自有解
 ## 目录
 
 ```
-server/   云后端（Express + sqlite + 微信支付 APIv3）
+server/   云后端（Express + sqlite + 微信支付 APIv3 + 支付宝 AI 按量付费）
   src/sph/          解析隔离层（normalize.js 输入归一化 + resolverClient.js 自有解析服务客户端）
-skill/    Claude Code skill（SKILL.md + qr/poll/decrypt 脚本；decrypt 仅历史加密订单需要）
+  src/a2m/          支付宝按量付费隔离层（protocol.js 402 协议纯函数 / config.js 沙箱-生产配置 / alipay.js 验付+履约 SDK /
+                    volcAsr.js 火山豆包单向流式 ASR WS 客户端 / srt.js 字幕生成 / artifacts.js 音频+文字稿产物流水线）
+skill/    Claude Code skill
+  sph-video-wechat-channels-downloader/   默认微信扫码通道（订单/托管页/轮询/下载）
+  sph-video-alipay-a2m/                   支付宝按量付费通道（402/Payment-Proof，a2m.py 一个纯标准库脚本；¥1 打包视频+音频+文字稿）
 deploy/   systemd / nginx / env 模板
 docs/     runbook（部署、解析服务故障排查、故障处置）
 ```

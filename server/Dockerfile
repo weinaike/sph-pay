@@ -13,9 +13,9 @@ RUN if [ "$USE_CN_MIRROR" = "1" ]; then \
       sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g" "$f"; \
     fi
 
-# 证书 + 时区（无浏览器依赖）
+# 证书 + 时区 + ffmpeg（A2M ¥1 打包交付：音频提取 m4a + ASR 转 wav 流）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates tzdata \
+      ca-certificates tzdata ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
