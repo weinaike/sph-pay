@@ -72,7 +72,7 @@ curl -sSL -C - --retry 3 -o "./sph-downloads/<净化标题>.mp4" "<cdn_url>"
 - 逐条时长/体积/分辨率就在结果文件里（`duration_s`/`file_size`/`width`/`height`，可能 null 需兜底），汇报不需要 ffprobe。
 - 量大放后台跑、逐条汇报绝对路径；中断用 `curl -C -` 续传。
 
-## 5. 额度不足 / 主动购买（402 应对）
+## 5. 额度不足 → 购买套餐（402 应对）
 
 价目、各档额度与权益**只有一个事实源**，报价前先取数：
 
@@ -80,7 +80,7 @@ curl -sSL -C - --retry 3 -o "./sph-downloads/<净化标题>.mp4" "<cdn_url>"
 curl -sS https://sph.yes-tek.com/api/package    # → {price_cents, notice, packages:{A:{amount_cents,link_quota,search_credits},...}}
 ```
 
-向用户报价、推荐都用这份输出，**不凭记忆写价格**。推荐档位按**待转条数**取最小满足档（额度 ≈10 条→A；≈100 条→B；更多/常用→C）。**购买前必达三条**：**虚拟权益支付后即时到账 · 售出不退 · 余额永久有效**。
+报价都用这份输出，**不凭记忆写价格**；档位按**待转条数**取最小满足档（≈10 条→A；≈100 条→B；更多→C）。条款与权益说明支付页自带，对话侧不复述。
 
 ```bash
 python3 "$SKILL_DIR/scripts/wallet.py" buy B > ./package_order.json   # → {order_id, order_token, page_url, expire_at, granted, notice}
@@ -93,7 +93,18 @@ python3 "$SKILL_DIR/scripts/poll.py" --order <order_id> --token <order_token> --
 python3 "$SKILL_DIR/scripts/wallet.py" me                           # 确认到账后继续批量
 ```
 
-不想付费的免费口径：单条视频 → 小程序《越思工具》免费下载（同 SKILL.md 免费路径引导）；达人前 10 条短链本身免费。
+## 7. 用户粘来「钱包码」（在支付页直购了套餐）
+
+用户会粘来一串 64 位十六进制**钱包码**（权益落在页面钱包）。先 `wallet.py me` 查本地钱包：
+
+- 本地无钱包或余额为 0 → 直接写入并验证：
+
+```bash
+mkdir -p ~/.config/sph && printf '%s' "<钱包码>" > ~/.config/sph/user_token
+python3 "$SKILL_DIR/scripts/wallet.py" me                           # 确认余额到账再继续
+```
+
+- 本地钱包已有余额 → **不要直接覆盖**：两个钱包相互独立。把旧码报给用户备份，由用户决定切换还是继续用本地余额。
 
 ## 6. 单视频 + 有额度：免支付直取
 
@@ -104,4 +115,4 @@ curl -sS -X POST "https://sph.yes-tek.com/api/resolve" \
   -H 'content-type: application/json' -H "x-user-token: <token>" -d '{"url":"<短链>"}'
 ```
 
-→ `{url, file_size, title, author, duration_s, width, height, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同 SKILL.md 第 6/7 步，交付后追问同达人其他作品见 SKILL.md 第 8 节（响应自带 `author` 达人昵称，空串才问用户）。无钱包/无额度 → 走原订单流。
+→ `{url, file_size, title, author, duration_s, width, height, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同 SKILL.md 第 6/7 步；响应自带 `author` 达人昵称（空串兜底），用户要同达人更多作品时走本文件第 1~4 节。无钱包/无额度 → 走原订单流（SKILL.md 第 3~5 步）。

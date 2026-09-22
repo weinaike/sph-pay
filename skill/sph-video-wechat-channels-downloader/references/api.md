@@ -37,11 +37,11 @@ curl -X POST "https://sph.yes-tek.com/api/order" -H 'content-type: application/j
 ## GET /p/:id/finder?t=（同达人 Top10，页面懒加载用）
 - 200 `{nickname, username, total, items:[{title, share_url, created_at, duration, size}]}`（标题已净化；免费档，finder_cache 24h）
 - 无作者/无精确匹配 `{items:[], reason}`；通道故障 503 `finder_unavailable`（页面静默移除该卡）
-- skill 一般不用此端点（批量走第 9 节 finder/search + finder/videos）
+- skill 一般不用此端点（批量走 finder.md：finder/search + finder/videos）
 
 ## POST /p/:id/package（页面直购套餐；skill 不使用，用户在页面上点「直接购买」）
 - body `{package:'A|B|C', token:<订单 token>, user_token:<页面钱包，可选>}` → `{order_id, order_token, package, amount_cents, expire_at, code_url, qr_data, user_token, granted, notice}`
-- 权益落在**页面钱包**（浏览器 localStorage）；到账后页面展示钱包码，用户粘回对话 → 见 SKILL.md 第 9 节「用户在支付页直购了套餐」的写入流程
+- 权益落在**页面钱包**（浏览器 localStorage）；到账后页面展示钱包码，用户粘回对话 → 见 finder.md 第 7 节的写入流程
 
 ## POST /api/user（匿名开户）· GET /api/user/me（余额）
 ```bash

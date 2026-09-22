@@ -570,9 +570,9 @@ function finderInner(j){
       + '<br><span class="sub">'+dt(v.created_at)+(v.size?' · '+bytes(v.size):'')+'</span></td>'
       + '<td class="dd">'+(v.duration?'<span class="pill">'+dur(v.duration)+'</span>':'')+'</td></tr>';
   }).join('');
-  return '<div class="card" id="findercard"><h2>'+esc(j.nickname)+' 的作品 Top10 <span class="sub">（免费）</span></h2>'
+  return '<div class="card" id="findercard"><h2>'+esc(j.nickname)+' 的作品 Top10 </h2>'
     + '<table class="vlist"><tbody>'+rows+'</tbody></table>'
-    + '<div class="hint">共 '+j.total+' 条。要下载哪几条，回到对话报序号即可（批量走额度，见资源包）；前 10 条短链也可免费自取。</div></div>';
+    + '<div class="hint">共 '+j.total+' 条。要下载哪几条，回到对话报序号即可（批量走额度，见资源包）</div></div>';
 }
 
 async function loadFinder(){
@@ -587,7 +587,7 @@ async function loadFinder(){
   } catch { const el = document.getElementById('findercard'); if (el) el.remove(); }
 }
 
-/** 常见问题（折叠）：从对话侧 faq.md 口径浓缩成页面版——只解疑惑，不推销 */
+/** 常见问题（折叠 */
 function faqCard(){
   const qa = [
     ['支付后解析失败，会白花钱吗？', '不会。下单前已做真实解析预检，预检不过根本不会创建订单；支付后若解析失败，费用<b>自动全额退款、原路退回</b>，无需任何申请。'],
