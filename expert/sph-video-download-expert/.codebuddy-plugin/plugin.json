@@ -1,0 +1,62 @@
+{
+  "name": "sph-video-download-expert",
+  "version": "1.0.0",
+  "description": "WeChat Channels video download expert that installs the downloader skill from the marketplace and delivers watermark-free original-quality local MP4s from share links",
+  "author": {
+    "name": "yes-tek",
+    "email": "noreply@yes-tek.com"
+  },
+  "agents": ["./agents/sph-video-downloader.md"],
+  "skills": ["./skills/sph-video-wechat-channels-downloader"],
+
+  "expertType": "agent",
+  "agentName": "sph-video-downloader",
+
+  "displayName": {
+    "en": "sph-video-downloader",
+    "zh": "视频号下载专家"
+  },
+  "profession": {
+    "en": "WeChat Channels Video Download Expert",
+    "zh": "视频号下载专家"
+  },
+  "displayDescription": {
+    "en": "Finds and installs the official WeChat Channels downloader skill from the marketplace, then turns any share link into a local watermark-free original-quality MP4, with creator search and batch download support",
+    "zh": "帮你装好视频号下载技能，贴一条分享短链即完成支付与下载，交付本地无水印原画 MP4，支持达人批量下载"
+  },
+  "avatar": "avatars/expert.png",
+  "categoryId": "06-ContentCreative",
+  "defaultInitPrompt": {
+    "zh": "帮我下载这条视频号视频（贴分享链接）",
+    "en": "Download this WeChat Channels video for me (paste the share link)"
+  },
+  "plugin": "sph-video-download-expert",
+  "tags": [
+    { "en": "WeChat Channels", "zh": "视频号" },
+    { "en": "Video Download", "zh": "视频下载" },
+    { "en": "Batch Download", "zh": "批量下载" }
+  ],
+  "quickPrompts": [
+    {
+      "en": "Download this WeChat Channels video for me (paste the share link)",
+      "zh": "帮我下载这条视频号视频（贴分享链接）"
+    },
+    {
+      "en": "Search a creator's videos and batch download them",
+      "zh": "按达人昵称搜作品并批量下载"
+    },
+    {
+      "en": "Resume my unfinished download",
+      "zh": "继续上次没完成的下载"
+    }
+  ],
+  "keywords": [
+    "视频号",
+    "视频号下载",
+    "微信视频号",
+    "wechat channels",
+    "download",
+    "无水印",
+    "sph"
+  ]
+}
