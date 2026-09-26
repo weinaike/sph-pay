@@ -5,7 +5,7 @@ display_name_en: WeChat Channels Video Downloader
 description: 视频号（微信视频号 / WeChat Channels）视频下载与解析：粘贴一条分享短链，解析出标题、作者、封面、话题标签等视频信息，并下载原画质、无水印的 MP4 保存到本地。也支持达人检索与批量：按昵称搜达人、列出达人作品短链、批量转直链下载。交付物是本地文件路径，不是会失效的临时直链；本地零配置、零依赖，无需抓包工具、Playwright。当用户要下载、保存、留存、提取视频号视频，批量下载达人作品，或直接贴出 weixin.qq.com/sph/xxx、channels.weixin.qq.com/finder-preview/xxx 链接时使用。中文触发词：视频号下载、微信视频号下载、视频号视频保存、保存视频号到本地、短视频解析、视频号去水印、视频号无水印下载、下载视频号原画、视频号 MP4、视频号封面、sph 短链、微信视频保存、达人检索、找达人、博主主页视频、达人全部作品、批量下载视频号、视频号批量下载。Use when a WeChat Channels (视频号) share link must be downloaded or saved as a local MP4, or when the user wants to search a Channels creator (达人) and batch-download their videos. download WeChat Channels video, WeChat Channels video downloader, download short video from WeChat Channels, WeChat video download, save WeChat video, save WeChat video to camera roll, save WeChat video to computer, keep a copy of WeChat video, grab video from WeChat link, get mp4 from WeChat link, extract mp4 from WeChat Channels link, WeChat Channels link parser, download WeChat video no watermark, watermark-free, original quality, full quality, save offline, Channels creator search, batch download creator videos.
 description_zh: 视频号视频下载与解析：贴一条分享短链，解析出标题、作者、封面等视频信息，并下载原画质、无水印的 MP4 保存到本地；支持达人检索与批量下载达人作品。
 description_en: WeChat Channels video download and parsing — paste a share link to resolve video info (title, author, cover) and save a watermark-free, original-quality MP4 locally; also supports creator search and batch downloading a creator's videos.
-version: 1.0.0
+version: 1.1.0
 author: yes-tek
 ---
 
@@ -48,12 +48,14 @@ EOF
 
 ## 4. 把支付页链接交给用户（用户唯一动作：打开链接付款）
 
-把响应里的 **`page_url` 原样发给用户**，对话侧两行即可：
+**首选主动打开**：把响应里的 `page_url` 作为 http/https URL 交给宿主的内置浏览器预览能力渲染支付页（WorkBuddy 中即调用 `present_files`，传 URL 字符串，面板会直接打开支付页）。
 
-> ¥X.XX · 截止 HH:MM（expire_at 转本地时间）：〈page_url〉
-> 付款后回到这里，我继续下载。
+- `present_files` 必须放在**该轮最后一个工具调用**；打开后再补两行文本，便于复制：
+  > ¥X.XX · 截止 HH:MM（expire_at 转本地时间）：〈page_url〉
+  > 付款后回到这里，我继续下载。
+- 若宿主不支持内置浏览器（如纯 CLI），降级为**只发文本链接**，行为不变。
 
-页面状态自动推进；页面不是交付物——解析完成后页面只提示回到对话，下载由本对话完成。手机微信内打开该链接可直接点按支付，电脑打开扫码，无需额外说明。
+边界：只替用户"打开页面"，**不代替付款、不代授权**；扫码/确认一律由用户本人完成。页面状态自动推进；页面不是交付物——解析完成后页面只提示回到对话，下载由本对话完成。只推进流程，不复述页面内容（金额、倒计时、状态都已在页面里）。手机微信内打开该链接可直接点按支付，电脑打开扫码，无需额外说明。
 
 标题净化：`preview.title` 尾部焊着话题标签串（与 `description` 逐字符相同）——展示/命名前剥掉尾部连续 `#标签` 串（剥空则原样保留）；**不要把 `preview.description` 标成"文案/逐字稿"**（不含口播内容）。
 
