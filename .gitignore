@@ -28,3 +28,4 @@ skill-workspace/
 # Python 编译产物
 __pycache__/
 *.pyc
+*.zip

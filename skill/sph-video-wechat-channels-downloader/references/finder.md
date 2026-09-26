@@ -115,4 +115,4 @@ curl -sS -X POST "https://sph.yes-tek.com/api/resolve" \
   -H 'content-type: application/json' -H "x-user-token: <token>" -d '{"url":"<短链>"}'
 ```
 
-→ `{url, file_size, title, author, duration_s, width, height, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还）。拿到 url 后下载与汇报同 SKILL.md 第 6/7 步；响应自带 `author` 达人昵称（空串兜底），用户要同达人更多作品时走本文件第 1~4 节。无钱包/无额度 → 走原订单流（SKILL.md 第 3~5 步）。
+→ `{url, file_size, title, author, duration_s, width, height, like_count, fav_count, forward_count, comment_count, charged}`（扣 1 条额度；同短链 24h 内 `charged:false` 免重扣；解析失败 503 自动返还；互动计数=点赞/收藏/转发/评论数，0 需兜底）。拿到 url 后下载与汇报同 SKILL.md 第 6/7 步；响应自带 `author` 达人昵称（空串兜底），用户要同达人更多作品时走本文件第 1~4 节。无钱包/无额度 → 走原订单流（SKILL.md 第 3~5 步）。

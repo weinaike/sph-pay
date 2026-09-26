@@ -82,7 +82,7 @@ curl ... -H "x-user-token: <token>" -d '{"username":"v2_xxx@finder","full":true}
 curl -X POST "https://sph.yes-tek.com/api/resolve" -H 'content-type: application/json' \
   -H "x-user-token: <token>" -d '{"url":"https://weixin.qq.com/sph/xxxx"}'
 ```
-- 200 `{url, file_size, title, author, duration_s, width, height, charged}` —— 扣 1 条直链额度；同短链 24h 内 `charged:false` 免重扣；`author`=达人昵称（上游缺省 `''`）；`duration_s/width/height` 可能 null
+- 200 `{url, file_size, title, author, duration_s, width, height, like_count, fav_count, forward_count, comment_count, charged}` —— 扣 1 条直链额度；同短链 24h 内 `charged:false` 免重扣；`author`=达人昵称（上游缺省 `''`）；`duration_s/width/height` 可能 null；互动计数=点赞/收藏/转发/评论数（int，旧上游历史数据为 0，展示需兜底「暂无」）
 - 402 `no_link_quota`（message 含三选项引导）；503 `resolve_failed`（**额度已自动返还**）；400 `unsupported_link`
 - 限频 15 次/min/IP + 10 次/min/token（**批量请走 /api/resolve/batch，不要循环打单条**）
 
@@ -100,7 +100,7 @@ curl -X POST "https://sph.yes-tek.com/api/resolve/batch" -H 'content-type: appli
 ```bash
 curl "https://sph.yes-tek.com/api/resolve/batch/<batch_id>" -H "x-user-token: <token>"
 ```
-- 200 `{batch_id, status:'running'|'done', total, resolved_count, failed_count, skipped_count, pending_count, poll_after_ms, items:[{url,status,title,file_size,duration_s,width,height,cdn_url?,error?}]}`
+- 200 `{batch_id, status:'running'|'done', total, resolved_count, failed_count, skipped_count, pending_count, poll_after_ms, items:[{url,status,title,file_size,duration_s,width,height,like_count,fav_count,forward_count,comment_count,cdn_url?,error?}]}``
   - `cdn_url` 只随 `status:'resolved'` 条目出现（属主鉴权；**不进对话**，下载动作用）
   - `status:'refunded'` = 该条解析失败已返还；`'skipped'` = 额度不足未处理
 - 404 `batch_not_found`（含非属主）；轮询 60/min/IP + 30/min/token（poll.py --batch 已带节奏）
