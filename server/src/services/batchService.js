@@ -85,6 +85,8 @@ async function processItem(batchId, it) {
     batches.transitionItem(batchId, it.idx, 'resolving', 'resolved', {
       cdn_url: r.cdnUrl, title: r.title, file_size: r.fileSize,
       duration_s: r.durationS ?? null, width: r.width ?? null, height: r.height ?? null,
+      like_count: r.likeCount ?? 0, fav_count: r.favCount ?? 0,
+      forward_count: r.forwardCount ?? 0, comment_count: r.commentCount ?? 0,
     });
     return true;
   } catch (e) {

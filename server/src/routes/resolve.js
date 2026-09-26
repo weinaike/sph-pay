@@ -19,6 +19,10 @@ const outSchema = z.object({
   duration_s: z.number().int().nullable(), // mp4 头解析元数据（可能为 null）
   width: z.number().int().nullable(),
   height: z.number().int().nullable(),
+  like_count: z.number().int().nonnegative(), // 互动计数（get_feed_info Fmt 解析；旧上游恒 0）
+  fav_count: z.number().int().nonnegative(),
+  forward_count: z.number().int().nonnegative(),
+  comment_count: z.number().int().nonnegative(),
   charged: z.boolean(), // false = 24h 内同短链免重扣
 });
 
@@ -70,6 +74,8 @@ resolveRouter.post('/', ipLimit, tokenLimit, userAuth, async (req, res, next) =>
       res.json(outSchema.parse({
         url: r.cdnUrl, file_size: r.fileSize, title: r.title, author: r.author,
         duration_s: r.durationS ?? null, width: r.width ?? null, height: r.height ?? null,
+        like_count: r.likeCount ?? 0, fav_count: r.favCount ?? 0,
+        forward_count: r.forwardCount ?? 0, comment_count: r.commentCount ?? 0,
         charged: !deduped,
       }));
     } catch (e) {
@@ -166,6 +172,10 @@ resolveRouter.get('/batch/:id', batchPollLimitIp, batchPollLimitToken, userAuth,
         duration_s: i.duration_s,
         width: i.width,
         height: i.height,
+        like_count: i.like_count ?? 0, // 互动计数（旧库行/旧上游解析的历史条目为 0）
+        fav_count: i.fav_count ?? 0,
+        forward_count: i.forward_count ?? 0,
+        comment_count: i.comment_count ?? 0,
         cdn_url: i.status === 'resolved' ? i.cdn_url : undefined, // 直链只随成功条目下发，属主鉴权内
         error: i.error || undefined,
       })),

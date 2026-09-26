@@ -70,7 +70,7 @@ export async function resolve(orderId) {
 /** 解析并 HEAD 校准 + mp4 头探测元数据（不落库；deliver 刷新 CDN 时效时复用）。
  *  明文直链：无 XOR、无 x-enclen。元数据探测失败不阻断（返回 null 字段）。 */
 export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } = {}) {
-  const { cdnUrl, title, author } = await resolveVideo(shareUrl, { forceRefresh, timeoutMs });
+  const { cdnUrl, title, author, likeCount, favCount, forwardCount, commentCount } = await resolveVideo(shareUrl, { forceRefresh, timeoutMs });
 
   // HEAD 校准：可达性 + 真实 file_size
   const head = await fetch(cdnUrl, { method: 'HEAD', signal: AbortSignal.timeout(config.sph.requestTimeoutMs) });
@@ -90,6 +90,8 @@ export async function resolveOnce(shareUrl, { forceRefresh = false, timeoutMs } 
     durationS: meta.durationS,
     width: meta.width,
     height: meta.height,
+    // 互动计数（可选增强）：markResolved 解构不取、自然忽略；批量与 /api/resolve 出参用
+    likeCount, favCount, forwardCount, commentCount,
   };
 }
 

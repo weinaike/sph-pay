@@ -48,6 +48,9 @@ skill(客户端编排，纯 curl + 2 个 stdlib 脚本) ── 下单/轮询/del
                                               │   cover/avatar 防盗链代理；skill 只把 page_url 给用户）
                                               ├─ batchService → /api/resolve/batch 批量解析（落盘续跑，
                                               │   逐条扣减/失败返还/额度耗尽整批 skip；替代客户端节拍脚本）
+                                              │   + 互动计数（点赞/收藏/转发/评论数，2026-09-23 起上游
+                                              │   sph-api 从 get_feed_info 的 *CountFmt 解析透传进 job 载荷
+                                              │   content.{like,collect,share,comment}_count；旧上游恒 0）
                                               └─ sweeper(60s)：pending 查单对账（回调丢失兜底）/过期关单/卡单重试/退款重试
 客户端下载：直连腾讯 CDN（明文 MP4；历史加密订单走 /api/order/:id/file 流式解密代理，不再有 decrypt.py）
 ```

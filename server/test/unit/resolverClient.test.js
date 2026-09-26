@@ -43,6 +43,35 @@ test('validateCompleted: 合法载荷', () => {
   assert.equal(r.author, '作者');
 });
 
+test('validateCompleted: 互动计数透传（新上游）', () => {
+  const r = validateCompleted({
+    ...completedBody.data,
+    content: {
+      ...completedBody.data.content,
+      like_count: 12000, collect_count: 356, share_count: 89, comment_count: 2048,
+    },
+  });
+  assert.equal(r.likeCount, 12000);
+  assert.equal(r.favCount, 356);
+  assert.equal(r.forwardCount, 89);
+  assert.equal(r.commentCount, 2048);
+});
+
+test('validateCompleted: 计数缺失/非法归零（旧上游/滚动部署期）', () => {
+  const base = validateCompleted(completedBody.data);
+  assert.equal(base.likeCount, 0);
+  assert.equal(base.favCount, 0);
+  assert.equal(base.forwardCount, 0);
+  assert.equal(base.commentCount, 0);
+
+  const dirty = validateCompleted({
+    ...completedBody.data,
+    content: { ...completedBody.data.content, like_count: 'x', collect_count: -5 },
+  });
+  assert.equal(dirty.likeCount, 0);
+  assert.equal(dirty.favCount, 0);
+});
+
 test('validateCompleted: 非 qq 域名 → Fatal', () => {
   assert.throws(
     () => validateCompleted({ ...completedBody.data, content: { url: 'https://evil.com/x.mp4', title: 't' } }),

@@ -24,7 +24,17 @@ export function validateCompleted(data) {
   else if (!/(^|\.)qq\.com$/.test(new URL(url).hostname)) problems.push(`content.url 域名非法 (${new URL(url).hostname})`);
   if (!data?.content?.title) problems.push('content.title 缺失');
   if (problems.length) throw new ResolverFatalError(`解析服务响应结构变化: ${problems.join('; ')}`);
-  return { cdnUrl: url, title: String(data.content.title), author: String(data?.account?.nickname || '') };
+  // 互动计数（可选增强）：上游 sph-api ≥ 计数透传版才有；缺失/非法一律 0，不参与 Fatal 校验
+  const toCount = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0; };
+  return {
+    cdnUrl: url,
+    title: String(data.content.title),
+    author: String(data?.account?.nickname || ''),
+    likeCount: toCount(data?.content?.like_count),
+    favCount: toCount(data?.content?.collect_count),       // 收藏（model.Content.collect_count）
+    forwardCount: toCount(data?.content?.share_count),     // 转发（model.Content.share_count）
+    commentCount: toCount(data?.content?.comment_count),
+  };
 }
 
 /** 提交解析任务 → 轮询到终态。超时/网络中断抛 Transient。 */

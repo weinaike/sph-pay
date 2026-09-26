@@ -110,11 +110,22 @@ CREATE TABLE IF NOT EXISTS resolve_batch_items (
   height    INTEGER,
   charged   INTEGER NOT NULL DEFAULT 0,          -- 本批是否对该条扣过额度（重启恢复时免重扣）
   usage_log_id INTEGER,                          -- 扣费台账 id（失败返还用）
+  like_count INTEGER NOT NULL DEFAULT 0,         -- 互动计数（get_feed_info Fmt 解析；旧上游恒 0）
+  fav_count INTEGER NOT NULL DEFAULT 0,
+  forward_count INTEGER NOT NULL DEFAULT 0,
+  comment_count INTEGER NOT NULL DEFAULT 0,
   error     TEXT,
   PRIMARY KEY (batch_id, idx)
 );
 CREATE INDEX IF NOT EXISTS idx_batches_user ON resolve_batches(user_token, created_at);
 `);
+
+// 互动计数（上游 sph-api 透传的 get_feed_info Fmt 解析值）：点赞/收藏/转发/评论数。
+// 旧上游载荷无这些字段 → 0；上游未升级时本列恒 0，不影响既有语义。
+const batchItemColumns = db.prepare('PRAGMA table_info(resolve_batch_items)').all().map(c => c.name);
+for (const col of ['like_count', 'fav_count', 'forward_count', 'comment_count']) {
+  if (!batchItemColumns.includes(col)) db.exec(`ALTER TABLE resolve_batch_items ADD COLUMN ${col} INTEGER NOT NULL DEFAULT 0`);
+}
 
 // AI 按量付费（A2M，支付宝）：402 账单订单与幂等履约状态机
 // PENDING_PAYMENT →（验付成功 bindTrade）PAID →（交付物落位 prepareDeliverable）PENDING_CONFIRM
