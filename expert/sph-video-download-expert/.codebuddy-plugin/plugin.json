@@ -4,7 +4,7 @@
   "description": "WeChat Channels video download expert that installs the downloader skill from the marketplace and delivers watermark-free original-quality local MP4s from share links",
   "author": {
     "name": "yes-tek",
-    "email": "noreply@yes-tek.com"
+    "email": "yestek@agent.qq.com"
   },
   "agents": ["./agents/sph-video-downloader.md"],
   "skills": ["./skills/sph-video-wechat-channels-downloader"],

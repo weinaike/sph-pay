@@ -42,7 +42,7 @@ unzip -l sph-video-download-expert.zip | grep -c 'sph-video-wechat-channels-down
 
 zip 顶层保留专家目录名（与本仓库 `skill/*.zip` 的打包约定一致）。在 WorkBuddy 开放平台提交 zip 前自查：
 
-- [ ] `author` 已换成真实联系方式（当前为占位 `noreply@yes-tek.com`）
+- [x] `author.email` = `yestek@agent.qq.com`（与技能内反馈邮箱一致）
 - [ ] `displayDescription.zh` 字数在 40–50 之间
 - [ ] `defaultInitPrompt` 与 `quickPrompts[0]` 完全一致
 - [ ] `tags` / `quickPrompts` 各固定 3 条
