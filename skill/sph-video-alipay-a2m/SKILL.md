@@ -4,7 +4,7 @@ display_name: 视频号下载·支付宝按量付费
 display_name_en: WeChat Channels Downloader · Alipay Pay-Per-Use
 description: 视频号视频下载·支付宝 AI 按量付费通道：粘贴视频号分享短链，通过支付宝按量付费（402 Payment-Needed / Payment-Proof 协议）按次支付后解析并下载原画质、无水印 MP4，同一价打包交付音频提取（M4A）与语音转文字稿（TXT/SRT 字幕）到本地。当用户明确要用支付宝付款、按量付费/按次付费（支付宝）、花呗/余额宝渠道，或所在环境以支付宝为主要支付方式时使用本 skill；默认微信扫码通道用 sph-video-wechat-channels-downloader。交付物是本地文件路径，不是会失效的临时直链；本地零配置、零依赖。中文触发词：支付宝下载视频号、视频号按量付费、按次付费、支付宝付、402、AI 付、视频号转文字、提取音频、视频号字幕。Use when the user wants to pay per-use via Alipay (A2M / 402 Payment-Needed protocol) to download a WeChat Channels (视频号) video as a local MP4 (with bundled audio M4A + ASR transcript TXT/SRT).
 description_zh: 视频号下载·支付宝 AI 按量付费通道：贴分享短链，支付宝按次付费（¥1 打包交付 MP4 + 音频 M4A + 转文字稿 TXT/SRT）后下载保存到本地。
-description_en: WeChat Channels download via Alipay AI pay-per-use (A2M / 402 protocol): paste a share link, pay per order with Alipay, and get a bundled local delivery of MP4, audio M4A and ASR transcript TXT/SRT.
+description_en: WeChat Channels download via Alipay AI pay-per-use (A2M / 402 protocol) — paste a share link, pay per order with Alipay, and get a bundled local delivery of MP4, audio M4A and ASR transcript TXT/SRT.
 version: 1.0.0
 author: yes-tek
 ---
@@ -91,6 +91,8 @@ python3 "$SKILL_DIR/scripts/a2m.py" transcript "<delivery.json 路径>"
 ## 6. 交付汇报
 
 展示**时长 / 体积 / 分辨率 / mp4 绝对路径**，以及**m4a、txt/srt 路径**（元数据来自 delivery 响应，不需要 ffprobe），并说明视频不做云端保存、本地文件是唯一副本（音频/文字稿产物服务端保留约 48 小时，之后仅本地副本）。
+
+汇报末尾固定带一句反馈通道：**如有任何问题、意见和建议，可通过 Agent 邮箱反馈：yestek@agent.qq.com**。
 
 ## 7. 恢复中断的下载
 

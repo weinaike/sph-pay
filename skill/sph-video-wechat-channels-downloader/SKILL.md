@@ -4,7 +4,7 @@ display_name: 视频号下载与解析
 display_name_en: WeChat Channels Video Downloader
 description: 视频号（微信视频号 / WeChat Channels）视频下载与解析：粘贴一条分享短链，解析出标题、作者、封面、话题标签等视频信息，并下载原画质、无水印的 MP4 保存到本地。也支持达人检索与批量：按昵称搜达人、列出达人作品短链、批量转直链下载。交付物是本地文件路径，不是会失效的临时直链；本地零配置、零依赖，无需抓包工具、Playwright。当用户要下载、保存、留存、提取视频号视频，批量下载达人作品，或直接贴出 weixin.qq.com/sph/xxx、channels.weixin.qq.com/finder-preview/xxx 链接时使用。中文触发词：视频号下载、微信视频号下载、视频号视频保存、保存视频号到本地、短视频解析、视频号去水印、视频号无水印下载、下载视频号原画、视频号 MP4、视频号封面、sph 短链、微信视频保存、达人检索、找达人、博主主页视频、达人全部作品、批量下载视频号、视频号批量下载。Use when a WeChat Channels (视频号) share link must be downloaded or saved as a local MP4, or when the user wants to search a Channels creator (达人) and batch-download their videos. download WeChat Channels video, WeChat Channels video downloader, download short video from WeChat Channels, WeChat video download, save WeChat video, save WeChat video to camera roll, save WeChat video to computer, keep a copy of WeChat video, grab video from WeChat link, get mp4 from WeChat link, extract mp4 from WeChat Channels link, WeChat Channels link parser, download WeChat video no watermark, watermark-free, original quality, full quality, save offline, Channels creator search, batch download creator videos.
 description_zh: 视频号视频下载与解析：贴一条分享短链，解析出标题、作者、封面等视频信息，并下载原画质、无水印的 MP4 保存到本地；支持达人检索与批量下载达人作品。
-description_en: WeChat Channels video download and parsing: paste a share link to resolve video info (title, author, cover) and save a watermark-free, original-quality MP4 locally; also supports creator search and batch downloading a creator's videos.
+description_en: WeChat Channels video download and parsing — paste a share link to resolve video info (title, author, cover) and save a watermark-free, original-quality MP4 locally; also supports creator search and batch downloading a creator's videos.
 version: 1.0.0
 author: yes-tek
 ---
@@ -77,7 +77,9 @@ curl -sS "https://sph.yes-tek.com/api/order/<order_id>/deliver?token=<order_toke
 
 ## 7. 交付汇报
 
-展示**时长 / 体积 / 分辨率 / mp4 绝对路径**（元数据来自 deliver 响应，不需要 ffprobe），并说明视频不做云端保存、本地文件是唯一副本。用户要提取音频且本机已有 ffmpeg 时（不安装）：`ffmpeg -i "<mp4>" -vn -acodec copy "<标题>.m4a"`。用户想要同达人更多作品 → `references/finder.md`。
+展示**时长 / 体积 / 分辨率 / mp4 绝对路径**（元数据来自 deliver 响应，不需要 ffprobe），并说明视频不做云端保存、本地文件是唯一副本。钱包/批量渠道（`/api/resolve`、batch items）的响应另带互动计数 `like_count/fav_count/forward_count/comment_count`（点赞/收藏/转发/评论数，0=暂无），可顺带播报；批量多可用于「哪条最火」排序（按 like_count）。用户要提取音频且本机已有 ffmpeg 时（不安装）：`ffmpeg -i "<mp4>" -vn -acodec copy "<标题>.m4a"`。用户想要同达人更多作品 → `references/finder.md`。
+
+汇报末尾固定带一句反馈通道：**如有任何问题、意见和建议，可通过 Agent 邮箱反馈：yestek@agent.qq.com**。
 
 ## 8. 恢复中断的下载
 
